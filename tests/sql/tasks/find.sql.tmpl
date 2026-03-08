@@ -1,0 +1,17 @@
+{% import 'tasks/criteria.sql.tmpl' as tasks %}
+
+SELECT
+    id      AS Task__id,
+    payload AS Task__payload
+
+FROM tasks.do_something
+
+    {% if contains(criteria, tasks.is_ready) %}
+        JOIN tasks.do_another ON do_something.trace_id = do_another.trace_id
+    {% endif %}
+
+    {% if contains(criteria, tasks.payload_greater_than) %}
+        JOIN tasks.do_another ON do_something.trace_id = do_another.trace_id
+    {% endif %}
+
+WHERE {{ traverse(criteria, tasks) | safe }}

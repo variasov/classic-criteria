@@ -149,10 +149,10 @@ class CompositeCriteria(Criteria[DomainObject]):
 
     Используется внутри библиотеки.
     """
-    nested_criteria: Sequence[Criteria[DomainObject]]
+    nested: Sequence[Criteria[DomainObject]]
 
     def __init__(self, *criteria: Criteria[DomainObject]):
-        self.nested_criteria = list(criteria)
+        self.nested = list(criteria)
 
     def is_satisfied_by(self, candidate: DomainObject) -> bool:
         raise NotImplementedError
@@ -168,15 +168,15 @@ class And(CompositeCriteria[DomainObject]):
 
     def __and__(self, other: Criteria[DomainObject]) -> Criteria[DomainObject]:
         if isinstance(other, And):
-            self.nested_criteria += other.nested_criteria
+            self.nested += other.nested
         else:
-            self.nested_criteria += (other,)
+            self.nested += (other,)
         return self
 
     def is_satisfied_by(self, candidate: DomainObject) -> bool:
         return all([
             criteria.is_satisfied_by(candidate)
-            for criteria in self.nested_criteria
+            for criteria in self.nested
         ])
 
     def remainder_unsatisfied_by(
@@ -185,14 +185,14 @@ class And(CompositeCriteria[DomainObject]):
 
         non_satisfied = [
             criteria
-            for criteria in self.nested_criteria
+            for criteria in self.nested
             if not criteria.is_satisfied_by(candidate)
         ]
         if not non_satisfied:
             return None
         if len(non_satisfied) == 1:
             return non_satisfied[0]
-        if len(non_satisfied) == len(self.nested_criteria):
+        if len(non_satisfied) == len(self.nested):
             return self
         return And(*non_satisfied)
 
@@ -207,15 +207,15 @@ class Or(CompositeCriteria[DomainObject]):
 
     def __or__(self, other: Criteria[DomainObject]) -> Criteria[DomainObject]:
         if isinstance(other, Or):
-            self.nested_criteria += other.nested_criteria
+            self.nested += other.nested
         else:
-            self.nested_criteria += (other,)
+            self.nested += (other,)
         return self
 
     def is_satisfied_by(self, candidate: DomainObject) -> bool:
         return any([
             criteria.is_satisfied_by(candidate)
-            for criteria in self.nested_criteria
+            for criteria in self.nested
         ])
 
 
@@ -225,10 +225,10 @@ class UnaryCriteria(Criteria[DomainObject]):
 
     Используется внутри библиотеки.
     """
-    nested_criteria: Criteria[DomainObject]
+    nested: Criteria[DomainObject]
 
     def __init__(self, criteria: Criteria[DomainObject]) -> None:
-        self.nested_criteria = criteria
+        self.nested = criteria
 
 
 class Invert(UnaryCriteria[DomainObject]):
@@ -240,7 +240,7 @@ class Invert(UnaryCriteria[DomainObject]):
     """
 
     def is_satisfied_by(self, candidate: DomainObject) -> bool:
-        return not self.nested_criteria.is_satisfied_by(candidate)
+        return not self.nested.is_satisfied_by(candidate)
 
 
 class BinaryCriteria(Criteria[DomainObject]):

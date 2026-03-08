@@ -95,10 +95,7 @@ def make_predicate_criteria(
     new_cls = type(
         fn.__name__,
         (PredicateCriteria,),
-        {
-            'predicate': staticmethod(fn),
-            '__is_invariant__': getattr(fn, '__is_invariant__', False),
-        }
+        {'predicate': staticmethod(fn)},
     )
     return cast(
         type[PredicateCriteria[DomainObject, Params]],
