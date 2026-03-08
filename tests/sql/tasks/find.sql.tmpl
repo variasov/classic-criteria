@@ -1,8 +1,0 @@
-{% import 'tasks/criteria.sql.tmpl' as tasks %}
-
-SELECT
-    id      AS Task__id,
-    payload AS Task__payload
-
-FROM tasks.do_something
-WHERE {{ traverse(criteria, tasks) | safe }}

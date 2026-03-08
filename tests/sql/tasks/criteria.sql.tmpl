@@ -1,7 +1,0 @@
-{% macro is_ready(criteria) -%}
-    started_at IS NULL
-{%- endmacro %}
-
-{% macro payload_greater_than(criteria) -%}
-    length(payload) > {{ criteria.payload }}
-{%- endmacro %}
