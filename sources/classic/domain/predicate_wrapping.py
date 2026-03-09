@@ -1,4 +1,7 @@
-from typing import Callable, cast, ParamSpec, Generic, overload
+import inspect
+
+from dataclasses import make_dataclass, field, astuple
+from typing import Any, Callable, cast, ParamSpec, Generic, overload
 
 from .criteria import Criteria, DomainObject
 
@@ -9,15 +12,12 @@ Predicate = Callable[[DomainObject, Params], bool]
 
 class PredicateCriteria(Criteria[DomainObject], Generic[DomainObject, Params]):
     predicate: Predicate[DomainObject, Params]
-    args: Params.args
-    kwargs: Params.kwargs
 
-    def __init__(self, *args: Params.args, **kwargs: Params.kwargs) -> None:
-        self.args = args
-        self.kwargs = kwargs
+    def __init__(self, *args, **kwargs):
+        raise NotImplemented
 
     def is_satisfied_by(self, candidate: DomainObject) -> bool:
-        return self.predicate(candidate, *self.args, **self.kwargs)
+        return self.predicate(candidate, *astuple(self))
 
     def __str_(self) -> str:
         return self.predicate.__name__
@@ -91,14 +91,27 @@ class CriteriaDescriptor(Generic[DomainObject, Params]):
 def make_predicate_criteria(
     fn: Predicate[DomainObject, Params],
 ) -> type[PredicateCriteria[DomainObject, Params]]:
+    annotations = []
+    signature = inspect.signature(fn)
+    parameters = list(signature.parameters.items())
+    for name, param in parameters[1:]:
+        if param.annotation is param.empty:
+            annotation = Any
+        else:
+            annotation = param.annotation
 
-    new_cls = type(
+        if param.default is not param.empty:
+            param_desc = (name, annotation, field(default=param.default))
+        else:
+            param_desc = (name, annotation)
+
+        annotations.append(param_desc)
+
+    new_cls = make_dataclass(
         fn.__name__,
-        (PredicateCriteria,),
-        {
-            'predicate': staticmethod(fn),
-            '__is_invariant__': getattr(fn, '__is_invariant__', False),
-        }
+        annotations,
+        bases=(PredicateCriteria,),
+        namespace={'predicate': staticmethod(fn)},
     )
     return cast(
         type[PredicateCriteria[DomainObject, Params]],
