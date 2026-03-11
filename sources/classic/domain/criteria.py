@@ -1,4 +1,4 @@
-from typing import Optional, Sequence, Generic, TypeVar, overload
+from typing import Optional, Sequence, Generic, TypeVar, overload, Union
 
 from .errors import CriteriaNotSatisfied
 
@@ -113,9 +113,12 @@ class Criteria(Generic[DomainObject]):
         ...
 
     def __get__(
-        self, instance: DomainObject,
+        self, instance: Optional[DomainObject],
         owner: type[DomainObject],
-    ):
+    ) -> Union[
+         'BoundFormedCriteria[DomainObject]',
+         'Criteria[DomainObject]',
+    ]:
         if instance:
             return BoundFormedCriteria(instance, self)
         else:

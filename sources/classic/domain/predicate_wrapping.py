@@ -1,7 +1,7 @@
 import inspect
 
 from dataclasses import make_dataclass, field, astuple
-from typing import Any, Callable, cast, ParamSpec, Generic, overload
+from typing import Any, Callable, cast, ParamSpec, Generic, overload, Union
 
 from .criteria import Criteria, DomainObject
 
@@ -19,7 +19,7 @@ class PredicateCriteria(Criteria[DomainObject], Generic[DomainObject, Params]):
     def is_satisfied_by(self, candidate: DomainObject) -> bool:
         return self.predicate(candidate, *astuple(self))
 
-    def __str_(self) -> str:
+    def __str__(self) -> str:
         return self.predicate.__name__
 
 
@@ -56,7 +56,7 @@ class CriteriaDescriptor(Generic[DomainObject, Params]):
 
     def __init__(
         self, criteria_cls: type[PredicateCriteria[DomainObject, Params]],
-    ):
+    ) -> None:
         self.criteria_cls = criteria_cls
 
     def __call__(
@@ -80,8 +80,11 @@ class CriteriaDescriptor(Generic[DomainObject, Params]):
 
     def __get__(
         self, instance: DomainObject | None,
-        owner: type[DomainObject] | None,
-    ):
+        owner: type[DomainObject],
+    ) -> Union[
+         BoundUnformedCriteria[DomainObject, Params],
+         type[PredicateCriteria[DomainObject, Params]],
+    ]:
         if instance:
             return BoundUnformedCriteria(instance, self.criteria_cls)
         else:

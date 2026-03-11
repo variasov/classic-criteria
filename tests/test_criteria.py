@@ -10,11 +10,11 @@ class SomeEntity:
         self.value = value
 
     @criteria
-    def with_param(self, value):
+    def with_param(self, value) -> bool:
         return self.value == value
 
     @criteria
-    def without_param(self):
+    def without_param(self) -> bool:
         return self.value is not None
 
     rule = without_param() & with_param(1)

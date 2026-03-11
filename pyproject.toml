@@ -33,4 +33,5 @@ namespaces = true
 dev = [
     "pytest~=9.0",
     "psycopg>=3.3.3",
+    "mypy>=1.19.1",
 ]
