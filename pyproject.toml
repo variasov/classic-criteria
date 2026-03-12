@@ -6,8 +6,8 @@ requires = [
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "classic-domain"
-version = "0.2.0"
+name = "classic-criteria"
+version = "0.1.0"
 authors = [
     {name = "Sergey Variasov", email = "variasov@gmail.com"},
 ]
@@ -17,7 +17,7 @@ requires-python = ">=3.10"
 dependencies = []
 
 [project.urls]
-Homepage = "https://github.com/variasov/classic-domain"
+Homepage = "https://github.com/variasov/classic-criteria"
 
 [project.optional-dependencies]
 db-tools = [

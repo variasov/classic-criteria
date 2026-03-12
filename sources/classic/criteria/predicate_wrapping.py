@@ -1,13 +1,10 @@
 import inspect
 
 from dataclasses import make_dataclass, field, astuple
-from typing import Any, Callable, cast, ParamSpec, Generic, overload, Union
+from typing import Any, cast, Generic, overload, Union
 
 from .criteria import Criteria, DomainObject
-
-
-Params = ParamSpec('Params')
-Predicate = Callable[[DomainObject, Params], bool]
+from .types import Params, Predicate
 
 
 class PredicateCriteria(Criteria[DomainObject], Generic[DomainObject, Params]):
@@ -130,7 +127,7 @@ def criteria(
 
     Пример:
     >>> from dataclasses import dataclass
-    ... from classic.domain import criteria
+    ... from classic.criteria import criteria
     ...
     ... @dataclass
     ... class Book:
@@ -146,7 +143,7 @@ def criteria(
 
     Также можно оборачивать методы в классе:
     >>> from dataclasses import dataclass
-    ... from classic.domain import criteria
+    ... from classic.criteria import criteria
     ...
     ... @dataclass
     ... class Book:

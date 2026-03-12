@@ -1,4 +1,4 @@
-# Classic Domain
+# Classic Criteria
 
 Основывается на книге Эрика Эванса 
 "Domain Driven Design: tackling complexity in the heart of software".
@@ -11,7 +11,7 @@
 
 ## Установка
 ```shell
-pip install classic-domain
+pip install classic-criteria
 ```
 
 ## Критерии-классы
@@ -35,7 +35,7 @@ from datetime import datetime
 from dataclasses import dataclass
 from typing import Optional
 
-from classic.domain import Criteria
+from classic.criteria import Criteria
 
 
 @dataclass
@@ -117,7 +117,7 @@ from datetime import datetime
 from dataclasses import dataclass
 from typing import Optional
 
-from classic.domain import criteria
+from classic.criteria import criteria
 
 
 @dataclass
@@ -208,7 +208,7 @@ from datetime import datetime
 from dataclasses import dataclass
 from typing import Optional
 
-from classic.domain import criteria
+from classic.criteria import criteria
 
 
 @dataclass
@@ -233,4 +233,4 @@ def task_is_obsolete(task: Task, days_to_work: int) -> bool:
 ### Выборки в БД
 Также, критерии можно использовать для построения запросов к БД.
 
-**Этот раздел будет заполнен позднее, по мере готовности classic-db-tools**
+Пример рендера и обхода дерева можно увидеть в [classic-db-tools](https://github.com/variasov/classic-db-tools).

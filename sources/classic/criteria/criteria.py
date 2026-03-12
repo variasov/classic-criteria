@@ -1,9 +1,7 @@
-from typing import Optional, Sequence, Generic, TypeVar, overload, Union
+from typing import Optional, Sequence, Generic, overload, Union
 
 from .errors import CriteriaNotSatisfied
-
-
-DomainObject = TypeVar('DomainObject')
+from .types import DomainObject
 
 
 class Criteria(Generic[DomainObject]):
@@ -20,7 +18,7 @@ class Criteria(Generic[DomainObject]):
     Пример:
     >>> from datetime import datetime
     ... from dataclasses import dataclass
-    ... from classic.domain import Criteria
+    ... from classic.criteria import Criteria
     ...
     ... @dataclass
     ... class Task:

@@ -1,7 +1,7 @@
 import pytest
 
-from classic.domain import Criteria, criteria, CriteriaNotSatisfied
-from classic.domain.criteria import DomainObject
+from classic.criteria import Criteria, criteria, CriteriaNotSatisfied
+from classic.criteria import DomainObject
 
 
 class SomeEntity:
@@ -10,11 +10,11 @@ class SomeEntity:
         self.value = value
 
     @criteria
-    def with_param(self, value) -> bool:
+    def with_param(self, value):
         return self.value == value
 
     @criteria
-    def without_param(self) -> bool:
+    def without_param(self):
         return self.value is not None
 
     rule = without_param() & with_param(1)
