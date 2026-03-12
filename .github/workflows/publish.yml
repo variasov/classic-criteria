@@ -40,7 +40,7 @@ jobs:
 
     environment:
       name: pypi
-      url: https://pypi.org/project/classic-domain/
+      url: https://pypi.org/project/classic-criteria/
 
     permissions:
       id-token: write

@@ -1,7 +1,7 @@
 import pytest
 
-from classic.domain import Criteria, criteria, CriteriaNotSatisfied
-from classic.domain.criteria import DomainObject
+from classic.criteria import Criteria, criteria, CriteriaNotSatisfied
+from classic.criteria import DomainObject
 
 
 class SomeEntity:

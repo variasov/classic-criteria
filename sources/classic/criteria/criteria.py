@@ -1,9 +1,7 @@
-from typing import Optional, Sequence, Generic, TypeVar, overload
+from typing import Optional, Sequence, Generic, overload, Union
 
 from .errors import CriteriaNotSatisfied
-
-
-DomainObject = TypeVar('DomainObject')
+from .types import DomainObject
 
 
 class Criteria(Generic[DomainObject]):
@@ -20,7 +18,7 @@ class Criteria(Generic[DomainObject]):
     Пример:
     >>> from datetime import datetime
     ... from dataclasses import dataclass
-    ... from classic.domain import Criteria
+    ... from classic.criteria import Criteria
     ...
     ... @dataclass
     ... class Task:
@@ -113,9 +111,12 @@ class Criteria(Generic[DomainObject]):
         ...
 
     def __get__(
-        self, instance: DomainObject,
+        self, instance: Optional[DomainObject],
         owner: type[DomainObject],
-    ):
+    ) -> Union[
+         'BoundFormedCriteria[DomainObject]',
+         'Criteria[DomainObject]',
+    ]:
         if instance:
             return BoundFormedCriteria(instance, self)
         else:
