@@ -1,20 +1,19 @@
 import pytest
 
-from classic.criteria import Criteria, criteria, CriteriaNotSatisfied
-from classic.criteria import DomainObject
+from classic.criteria import Criteria, CriteriaNotSatisfied, criteria
 
 
 class SomeEntity:
 
-    def __init__(self, value):
+    def __init__(self, value: int | None) -> None:
         self.value = value
 
     @criteria
-    def with_param(self, value):
+    def with_param(self, value: int) -> bool:
         return self.value == value
 
     @criteria
-    def without_param(self):
+    def without_param(self) -> bool:
         return self.value is not None
 
     rule = without_param() & with_param(1)
@@ -22,46 +21,46 @@ class SomeEntity:
 
 class CriteriaWithParam(Criteria[SomeEntity]):
 
-    def __init__(self, value):
+    def __init__(self, value: int) -> None:
         self.value = value
 
-    def is_satisfied_by(self, candidate: DomainObject) -> bool:
+    def is_satisfied_by(self, candidate: SomeEntity) -> bool:
         return self.value == candidate.value
 
 
 class CriteriaWithoutParam(Criteria[SomeEntity]):
 
-    def is_satisfied_by(self, candidate: DomainObject) -> bool:
+    def is_satisfied_by(self, candidate: SomeEntity) -> bool:
         return candidate.value is not None
 
 
 @criteria
-def with_param(entity, value):
+def with_param(entity: SomeEntity, value: int) -> bool:
     return entity.value == value
 
 
 @criteria
-def without_param(entity):
+def without_param(entity: SomeEntity) -> bool:
     return entity.value is not None
 
 
 @pytest.fixture
-def entity():
+def entity() -> SomeEntity:
     return SomeEntity(1)
 
 
 def test_instance(entity: SomeEntity):
     assert entity.with_param(1) is True
     assert entity.with_param.is_satisfied(1) is True
-    assert entity.with_param.must_be_satisfied(1) is None
+    entity.with_param.must_be_satisfied(1)
 
     assert entity.without_param() is True
     assert entity.without_param.is_satisfied() is True
-    assert entity.without_param.must_be_satisfied() is None
+    entity.without_param.must_be_satisfied()
 
     assert entity.rule() is True
     assert entity.rule.is_satisfied() is True
-    assert entity.rule.must_be_satisfied() is None
+    entity.rule.must_be_satisfied()
 
     with pytest.raises(CriteriaNotSatisfied):
         entity.with_param.must_be_satisfied(2)

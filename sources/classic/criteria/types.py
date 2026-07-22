@@ -1,6 +1,6 @@
-from typing import TypeVar, ParamSpec, Callable
+from typing import Callable, Concatenate, ParamSpec, TypeVar
 
 
 DomainObject = TypeVar('DomainObject')
 Params = ParamSpec('Params')
-Predicate = Callable[[DomainObject, Params], bool]
+Predicate = Callable[Concatenate[DomainObject, Params], bool]

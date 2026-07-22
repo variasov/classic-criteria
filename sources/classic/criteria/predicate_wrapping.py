@@ -1,7 +1,7 @@
 import inspect
 
 from dataclasses import make_dataclass, field, astuple
-from typing import Any, cast, Generic, overload, Union
+from typing import Any, Generic, Union, cast, overload
 
 from .criteria import Criteria, DomainObject
 from .types import Params, Predicate
@@ -11,10 +11,11 @@ class PredicateCriteria(Criteria[DomainObject], Generic[DomainObject, Params]):
     predicate: Predicate[DomainObject, Params]
 
     def __init__(self, *args, **kwargs):
-        raise NotImplemented
+        raise NotImplementedError
 
     def is_satisfied_by(self, candidate: DomainObject) -> bool:
-        return self.predicate(candidate, *astuple(self))
+        predicate = cast(Any, self.predicate)
+        return predicate(candidate, *astuple(cast(Any, self)))
 
     def __str__(self) -> str:
         return self.predicate.__name__
@@ -72,7 +73,7 @@ class CriteriaDescriptor(Generic[DomainObject, Params]):
     def __get__(
         self, instance: None,
         owner: type[DomainObject],
-    ) -> type[PredicateCriteria[DomainObject, Params]]:
+    ) -> 'CriteriaDescriptor[DomainObject, Params]':
         ...
 
     def __get__(
@@ -80,18 +81,17 @@ class CriteriaDescriptor(Generic[DomainObject, Params]):
         owner: type[DomainObject],
     ) -> Union[
          BoundUnformedCriteria[DomainObject, Params],
-         type[PredicateCriteria[DomainObject, Params]],
+         'CriteriaDescriptor[DomainObject, Params]',
     ]:
-        if instance:
+        if instance is not None:
             return BoundUnformedCriteria(instance, self.criteria_cls)
-        else:
-            return self.criteria_cls
+        return self
 
 
 def make_predicate_criteria(
     fn: Predicate[DomainObject, Params],
 ) -> type[PredicateCriteria[DomainObject, Params]]:
-    annotations = []
+    annotations: list[tuple[Any, ...]] = []
     signature = inspect.signature(fn)
     parameters = list(signature.parameters.items())
     for name, param in parameters[1:]:
@@ -101,11 +101,9 @@ def make_predicate_criteria(
             annotation = param.annotation
 
         if param.default is not param.empty:
-            param_desc = (name, annotation, field(default=param.default))
+            annotations.append((name, annotation, field(default=param.default)))
         else:
-            param_desc = (name, annotation)
-
-        annotations.append(param_desc)
+            annotations.append((name, annotation))
 
     new_cls = make_dataclass(
         fn.__name__,

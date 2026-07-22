@@ -1,7 +1,18 @@
-from typing import Optional, Sequence, Generic, overload, Union
+from typing import Generic, Optional, Protocol, TypeVar, Union, cast, overload
 
 from .errors import CriteriaNotSatisfied
 from .types import DomainObject
+
+
+_CriteriaDomainObject = TypeVar('_CriteriaDomainObject', contravariant=True)
+
+
+class _Criteria(Protocol[_CriteriaDomainObject]):
+    def is_satisfied_by(self, candidate: _CriteriaDomainObject) -> bool:
+        ...
+
+    def must_be_satisfied_by(self, candidate: _CriteriaDomainObject) -> None:
+        ...
 
 
 class Criteria(Generic[DomainObject]):
@@ -117,22 +128,25 @@ class Criteria(Generic[DomainObject]):
          'BoundFormedCriteria[DomainObject]',
          'Criteria[DomainObject]',
     ]:
-        if instance:
+        if instance is not None:
             return BoundFormedCriteria(instance, self)
-        else:
-            return self
+        return self
 
 
 class BoundFormedCriteria(Generic[DomainObject]):
     instance: DomainObject
-    criteria: Criteria[DomainObject]
+    _criteria: object
 
     def __init__(
         self, instance: DomainObject,
         criteria: Criteria[DomainObject],
     ) -> None:
         self.instance = instance
-        self.criteria = criteria
+        self._criteria = criteria
+
+    @property
+    def criteria(self) -> _Criteria[DomainObject]:
+        return cast(_Criteria[DomainObject], self._criteria)
 
     def __call__(self) -> bool:
         return self.is_satisfied()
@@ -150,7 +164,7 @@ class CompositeCriteria(Criteria[DomainObject]):
 
     Используется внутри библиотеки.
     """
-    nested: Sequence[Criteria[DomainObject]]
+    nested: list[Criteria[DomainObject]]
 
     def __init__(self, *criteria: Criteria[DomainObject]):
         self.nested = list(criteria)
@@ -171,7 +185,7 @@ class And(CompositeCriteria[DomainObject]):
         if isinstance(other, And):
             self.nested += other.nested
         else:
-            self.nested += (other,)
+            self.nested.append(other)
         return self
 
     def is_satisfied_by(self, candidate: DomainObject) -> bool:
@@ -210,7 +224,7 @@ class Or(CompositeCriteria[DomainObject]):
         if isinstance(other, Or):
             self.nested += other.nested
         else:
-            self.nested += (other,)
+            self.nested.append(other)
         return self
 
     def is_satisfied_by(self, candidate: DomainObject) -> bool:
@@ -226,10 +240,14 @@ class UnaryCriteria(Criteria[DomainObject]):
 
     Используется внутри библиотеки.
     """
-    nested: Criteria[DomainObject]
+    _nested: object
 
     def __init__(self, criteria: Criteria[DomainObject]) -> None:
-        self.nested = criteria
+        self._nested = criteria
+
+    @property
+    def nested(self) -> _Criteria[DomainObject]:
+        return cast(_Criteria[DomainObject], self._nested)
 
 
 class Invert(UnaryCriteria[DomainObject]):
@@ -251,15 +269,23 @@ class BinaryCriteria(Criteria[DomainObject]):
 
     Используется внутри библиотеки.
     """
-    left: Criteria
-    right: Criteria
+    _left: object
+    _right: object
 
     def __init__(
         self, left: Criteria[DomainObject],
         right: Criteria[DomainObject],
     ) -> None:
-        self.left = left
-        self.right = right
+        self._left = left
+        self._right = right
+
+    @property
+    def left(self) -> _Criteria[DomainObject]:
+        return cast(_Criteria[DomainObject], self._left)
+
+    @property
+    def right(self) -> _Criteria[DomainObject]:
+        return cast(_Criteria[DomainObject], self._right)
 
     def is_satisfied_by(self, candidate: DomainObject) -> bool:
         raise NotImplementedError

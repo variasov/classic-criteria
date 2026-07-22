@@ -7,7 +7,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "classic-criteria"
-version = "0.1.0"
+version = "0.2.0"
 authors = [
     {name = "Sergey Variasov", email = "variasov@gmail.com"},
 ]
@@ -28,6 +28,13 @@ db-tools = [
 [tool.setuptools.packages.find]
 where = ["sources"]
 namespaces = true
+
+[tool.setuptools.package-data]
+classic = ["py.typed"]
+
+[tool.mypy]
+explicit_package_bases = true
+mypy_path = ["sources"]
 
 [dependency-groups]
 dev = [
