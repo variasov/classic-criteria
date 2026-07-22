@@ -1,19 +1,23 @@
 import inspect
 
 from dataclasses import make_dataclass, field, astuple
-from typing import Any, Generic, Union, cast, overload
+from typing import Callable, Concatenate, ParamSpec, Any, Generic, TypeVar, Union, cast, overload
 
-from .criteria import Criteria, DomainObject
-from .types import Params, Predicate
+from .criteria import Criteria
 
 
-class PredicateCriteria(Criteria[DomainObject], Generic[DomainObject, Params]):
-    predicate: Predicate[DomainObject, Params]
+Object = TypeVar('Object')
+Params = ParamSpec('Params')
+Predicate = Callable[Concatenate[Object, Params], bool]
+
+
+class PredicateCriteria(Criteria[Object], Generic[Object, Params]):
+    predicate: Predicate[Object, Params]
 
     def __init__(self, *args, **kwargs):
         raise NotImplementedError
 
-    def is_satisfied_by(self, candidate: DomainObject) -> bool:
+    def is_satisfied_by(self, candidate: Object) -> bool:
         predicate = cast(Any, self.predicate)
         return predicate(candidate, *astuple(cast(Any, self)))
 
@@ -21,13 +25,13 @@ class PredicateCriteria(Criteria[DomainObject], Generic[DomainObject, Params]):
         return self.predicate.__name__
 
 
-class BoundUnformedCriteria(Generic[DomainObject, Params]):
-    instance: DomainObject
-    criteria_cls: type[PredicateCriteria[DomainObject, Params]]
+class BoundUnformedCriteria(Generic[Object, Params]):
+    instance: Object
+    criteria_cls: type[PredicateCriteria[Object, Params]]
 
     def __init__(
-        self, instance: DomainObject,
-        criteria_cls: type[PredicateCriteria[DomainObject, Params]],
+        self, instance: Object,
+        criteria_cls: type[PredicateCriteria[Object, Params]],
     ) -> None:
         self.instance = instance
         self.criteria_cls = criteria_cls
@@ -49,39 +53,39 @@ class BoundUnformedCriteria(Generic[DomainObject, Params]):
         ).must_be_satisfied_by(self.instance)
 
 
-class CriteriaDescriptor(Generic[DomainObject, Params]):
-    criteria_cls: type[PredicateCriteria[DomainObject, Params]]
+class CriteriaDescriptor(Generic[Object, Params]):
+    criteria_cls: type[PredicateCriteria[Object, Params]]
 
     def __init__(
-        self, criteria_cls: type[PredicateCriteria[DomainObject, Params]],
+        self, criteria_cls: type[PredicateCriteria[Object, Params]],
     ) -> None:
         self.criteria_cls = criteria_cls
 
     def __call__(
         self, *args: Params.args, **kwargs: Params.kwargs,
-    ) -> Criteria[DomainObject]:
+    ) -> Criteria[Object]:
         return self.criteria_cls(*args, **kwargs)
 
     @overload
     def __get__(
-        self, instance: DomainObject,
-        owner: type[DomainObject],
-    ) -> BoundUnformedCriteria[DomainObject, Params]:
+        self, instance: Object,
+        owner: type[Object],
+    ) -> BoundUnformedCriteria[Object, Params]:
         ...
 
     @overload
     def __get__(
         self, instance: None,
-        owner: type[DomainObject],
-    ) -> 'CriteriaDescriptor[DomainObject, Params]':
+        owner: type[Object],
+    ) -> 'CriteriaDescriptor[Object, Params]':
         ...
 
     def __get__(
-        self, instance: DomainObject | None,
-        owner: type[DomainObject],
+        self, instance: Object | None,
+        owner: type[Object],
     ) -> Union[
-         BoundUnformedCriteria[DomainObject, Params],
-         'CriteriaDescriptor[DomainObject, Params]',
+         BoundUnformedCriteria[Object, Params],
+         'CriteriaDescriptor[Object, Params]',
     ]:
         if instance is not None:
             return BoundUnformedCriteria(instance, self.criteria_cls)
@@ -89,8 +93,8 @@ class CriteriaDescriptor(Generic[DomainObject, Params]):
 
 
 def make_predicate_criteria(
-    fn: Predicate[DomainObject, Params],
-) -> type[PredicateCriteria[DomainObject, Params]]:
+    fn: Predicate[Object, Params],
+) -> type[PredicateCriteria[Object, Params]]:
     annotations: list[tuple[Any, ...]] = []
     signature = inspect.signature(fn)
     parameters = list(signature.parameters.items())
@@ -112,14 +116,14 @@ def make_predicate_criteria(
         namespace={'predicate': staticmethod(fn)},
     )
     return cast(
-        type[PredicateCriteria[DomainObject, Params]],
+        type[PredicateCriteria[Object, Params]],
         new_cls,
     )
 
 
 def criteria(
-    fn: Predicate[DomainObject, Params],
-) -> CriteriaDescriptor[DomainObject, Params]:
+    fn: Predicate[Object, Params],
+) -> CriteriaDescriptor[Object, Params]:
     """
     Декоратор для удобного описания правила через функции:
 
@@ -159,6 +163,6 @@ def criteria(
     """
     assert callable(fn)
 
-    return CriteriaDescriptor[DomainObject, Params](
+    return CriteriaDescriptor[Object, Params](
         make_predicate_criteria(fn)
     )
