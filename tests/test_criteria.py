@@ -1,3 +1,5 @@
+from dataclasses import dataclass
+
 import pytest
 
 from classic.criteria import And, Criteria, CriteriaNotSatisfied, Or, criteria
@@ -160,3 +162,120 @@ def test_class_attribute_criteria_is_not_changed(entity: SomeEntity):
     assert extended is not rule
     assert rule(entity) is True
     assert extended(entity) is False
+
+
+@dataclass
+class Period:
+    start: int
+    end: int
+
+
+class Event:
+
+    def __init__(self, day: int) -> None:
+        self.day = day
+
+    @criteria
+    def in_period(self, period: Period) -> bool:
+        assert isinstance(period, Period)
+        return period.start <= self.day <= period.end
+
+
+@criteria
+def in_period(event: Event, period: Period) -> bool:
+    assert isinstance(period, Period)
+    return period.start <= event.day <= period.end
+
+
+def test_dataclass_param_is_passed_as_is():
+    period = Period(1, 5)
+    received: list[Period] = []
+
+    @criteria
+    def spy(event: Event, period: Period) -> bool:
+        received.append(period)
+        return True
+
+    spy(period).is_satisfied_by(Event(3))
+    assert received[0] is period
+
+
+def test_dataclass_param_on_class_and_instance():
+    event = Event(3)
+    assert Event.in_period(Period(1, 5)).is_satisfied_by(event) is True
+    assert Event.in_period(Period(4, 5)).is_satisfied_by(event) is False
+    assert event.in_period(Period(1, 5)) is True
+    assert in_period(Period(1, 5)).is_satisfied_by(event) is True
+
+
+def test_list_param_is_not_copied():
+    items = [1, 2]
+    received: list[list[int]] = []
+
+    @criteria
+    def spy(event: Event, items: list[int]) -> bool:
+        received.append(items)
+        return True
+
+    spy(items).is_satisfied_by(Event(1))
+    assert received[0] is items
+
+
+def test_instance_attributes_and_class_name():
+    period = Period(1, 5)
+    c = in_period(period)
+    assert type(c).__name__ == 'in_period'
+    assert c.period is period
+
+
+class KwEntity:
+
+    @criteria
+    def kw_default(self, *, x: int = 0) -> bool:
+        return x == 7
+
+    @criteria
+    def kw_required(self, a: int = 1, *, b: int) -> bool:
+        return (a, b) == (1, 2)
+
+    @criteria
+    def pos_only(self, a: int, /) -> bool:
+        return a == 3
+
+
+def test_keyword_only_with_default():
+    entity = KwEntity()
+    assert KwEntity.kw_default(x=7).is_satisfied_by(entity) is True
+    assert KwEntity.kw_default().is_satisfied_by(entity) is False
+    assert entity.kw_default(x=7) is True
+    with pytest.raises(TypeError):
+        KwEntity.kw_default(7)
+
+
+def test_keyword_only_without_default():
+    entity = KwEntity()
+    assert KwEntity.kw_required(b=2).is_satisfied_by(entity) is True
+    assert entity.kw_required(b=2) is True
+    assert entity.kw_required(5, b=2) is False
+    with pytest.raises(TypeError):
+        KwEntity.kw_required(1, 2)
+    with pytest.raises(TypeError):
+        KwEntity.kw_required()
+
+
+def test_positional_only():
+    entity = KwEntity()
+    assert KwEntity.pos_only(3).is_satisfied_by(entity) is True
+    assert entity.pos_only(4) is False
+
+
+def test_var_args_are_rejected():
+    with pytest.raises(TypeError, match='args'):
+        @criteria
+        def with_args(entity: Event, *args: int) -> bool:
+            return True
+
+    with pytest.raises(TypeError, match='kwargs'):
+        @criteria
+        def with_kwargs(entity: Event, **kwargs: int) -> bool:
+            return True

@@ -1,7 +1,7 @@
 import inspect
 
-from dataclasses import make_dataclass, field, astuple
-from typing import Callable, Concatenate, ParamSpec, Any, Generic, TypeVar, Union, cast, overload
+from dataclasses import make_dataclass, field
+from typing import Callable, ClassVar, Concatenate, ParamSpec, Any, Generic, TypeVar, Union, cast, overload
 
 from .criteria import Criteria
 
@@ -13,13 +13,19 @@ Predicate = Callable[Concatenate[Object, Params], bool]
 
 class PredicateCriteria(Criteria[Object], Generic[Object, Params]):
     predicate: Predicate[Object, Params]
+    _positional: ClassVar[tuple[str, ...]]
+    _keyword: ClassVar[tuple[str, ...]]
 
     def __init__(self, *args, **kwargs):
         raise NotImplementedError
 
     def is_satisfied_by(self, candidate: Object) -> bool:
         predicate = cast(Any, self.predicate)
-        return predicate(candidate, *astuple(cast(Any, self)))
+        return predicate(
+            candidate,
+            *[getattr(self, name) for name in self._positional],
+            **{name: getattr(self, name) for name in self._keyword},
+        )
 
     def __str__(self) -> str:
         return self.predicate.__name__
@@ -96,6 +102,8 @@ def make_predicate_criteria(
     fn: Predicate[Object, Params],
 ) -> type[PredicateCriteria[Object, Params]]:
     annotations: list[tuple[Any, ...]] = []
+    positional: list[str] = []
+    keyword: list[str] = []
     signature = inspect.signature(fn)
     parameters = list(signature.parameters.items())
     for name, param in parameters[1:]:
@@ -104,8 +112,22 @@ def make_predicate_criteria(
         else:
             annotation = param.annotation
 
+        if param.kind in (param.VAR_POSITIONAL, param.VAR_KEYWORD):
+            raise TypeError(
+                f'Критерий {fn.__name__!r}: параметр {name!r} '
+                f'({param.kind.description}) не поддерживается, '
+                f'так как не может быть полем критерия'
+            )
+
+        kw_only = param.kind is param.KEYWORD_ONLY
+        (keyword if kw_only else positional).append(name)
         if param.default is not param.empty:
-            annotations.append((name, annotation, field(default=param.default)))
+            annotations.append((
+                name, annotation,
+                field(default=param.default, kw_only=kw_only),
+            ))
+        elif kw_only:
+            annotations.append((name, annotation, field(kw_only=True)))
         else:
             annotations.append((name, annotation))
 
@@ -113,7 +135,11 @@ def make_predicate_criteria(
         fn.__name__,
         annotations,
         bases=(PredicateCriteria,),
-        namespace={'predicate': staticmethod(fn)},
+        namespace={
+            'predicate': staticmethod(fn),
+            '_positional': tuple(positional),
+            '_keyword': tuple(keyword),
+        },
     )
     return cast(
         type[PredicateCriteria[Object, Params]],
