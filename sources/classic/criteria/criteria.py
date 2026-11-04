@@ -185,11 +185,10 @@ class And(CompositeCriteria[Object]):
     """
 
     def __and__(self, other: Criteria[Object]) -> Criteria[Object]:
-        if isinstance(other, And):
-            self.nested += other.nested
-        else:
-            self.nested.append(other)
-        return self
+        other_nested: list[Criteria[Object]] = (
+            other.nested if isinstance(other, And) else [other]
+        )
+        return And(*self.nested, *other_nested)
 
     def is_satisfied_by(self, candidate: Object) -> bool:
         return all((            criteria.is_satisfied_by(candidate)
@@ -223,11 +222,10 @@ class Or(CompositeCriteria[Object]):
     """
 
     def __or__(self, other: Criteria[Object]) -> Criteria[Object]:
-        if isinstance(other, Or):
-            self.nested += other.nested
-        else:
-            self.nested.append(other)
-        return self
+        other_nested: list[Criteria[Object]] = (
+            other.nested if isinstance(other, Or) else [other]
+        )
+        return Or(*self.nested, *other_nested)
 
     def is_satisfied_by(self, candidate: Object) -> bool:
         return any((
