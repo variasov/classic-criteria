@@ -1,15 +1,16 @@
+import copy
 import pickle
+from collections.abc import Callable
 from dataclasses import dataclass
 from unittest import mock
 
 import pytest
 
+import classic.criteria
 from classic.criteria import (
-    And, Criteria, CriteriaNotSatisfied, Invert, Or, Xor, criteria,
+    And, BinaryCriteria, CompositeCriteria, Criteria, CriteriaNotSatisfied,
+    Invert, Or, ReturnsFalse, ReturnsTrue, UnaryCriteria, Xor, criteria,
 )
-# TODO: ReturnsTrue и ReturnsFalse пока не экспортированы из classic.criteria,
-# после добавления экспорта импортировать оттуда.
-from classic.criteria.criteria import ReturnsFalse, ReturnsTrue
 
 
 class SomeEntity:
@@ -489,3 +490,124 @@ def test_mock_assert_called_with_composite_criteria():
     repo.find.assert_called_once_with(with_param(1) & without_param())
     with pytest.raises(AssertionError):
         repo.find.assert_called_once_with(with_param(2) & without_param())
+
+
+def test_exports():
+    for name in (
+        'ReturnsTrue', 'ReturnsFalse', 'CompositeCriteria',
+        'UnaryCriteria', 'BinaryCriteria',
+    ):
+        assert name in classic.criteria.__all__
+    assert list(classic.criteria.__all__) == sorted(
+        classic.criteria.__all__, key=lambda n: (n[0].islower(), n),
+    )
+    assert issubclass(And, CompositeCriteria)
+    assert issubclass(Invert, UnaryCriteria)
+    assert issubclass(Xor, BinaryCriteria)
+
+
+def test_returns_constants_hash_and_type_equality():
+    assert hash(ReturnsFalse()) == hash(ReturnsFalse())
+
+    class MyTrue(ReturnsTrue):
+        pass
+
+    assert MyTrue() != ReturnsTrue()
+
+
+def test_criteria_rejects_non_callable():
+    with pytest.raises(TypeError, match='вызываем'):
+        criteria(1)  # type: ignore[call-overload]
+
+
+def reserved_predicate(entity: SomeEntity, predicate: int) -> bool:
+    return True
+
+
+def reserved_positional(entity: SomeEntity, _positional: int) -> bool:
+    return True
+
+
+def reserved_keyword(entity: SomeEntity, *, _keyword: int) -> bool:
+    return True
+
+
+@pytest.mark.parametrize(('fn', 'name'), (
+    (reserved_predicate, 'predicate'),
+    (reserved_positional, '_positional'),
+    (reserved_keyword, '_keyword'),
+))
+def test_reserved_parameter_names(
+    fn: Callable[..., bool], name: str,
+):
+    with pytest.raises(TypeError, match=name):
+        criteria(fn)
+
+
+def test_and_is_satisfied_by(entity: SomeEntity):
+    assert And(CriteriaWithParam(1), CriteriaWithoutParam())(entity) is True
+    assert And(CriteriaWithParam(2), CriteriaWithoutParam())(entity) is False
+
+
+def _roundtrip(obj):
+    restored = pickle.loads(pickle.dumps(obj))
+    assert restored == obj
+    return restored
+
+
+def test_pickle_module_function_criteria():
+    original = with_param(2)
+    restored = _roundtrip(original)
+    assert type(restored) is type(original)
+    assert restored.value == 2
+    assert type(original).__module__ == __name__
+
+
+def test_pickle_method_criteria():
+    original = SomeEntity.with_param(2)
+    restored = _roundtrip(original)
+    assert type(restored) is type(original)
+    assert restored.is_satisfied_by(SomeEntity(2)) is True
+
+
+def test_pickle_keyword_only_criteria():
+    original = KwEntity.kw_required(b=2)
+    restored = _roundtrip(original)
+    assert type(restored) is type(original)
+    assert restored.is_satisfied_by(KwEntity()) is True
+    restored = _roundtrip(KwEntity.kw_required(5, b=3))
+    assert (restored.a, restored.b) == (5, 3)
+
+
+def test_pickle_composite_criteria():
+    original = with_param(1) & ~without_param()
+    restored = _roundtrip(original)
+    assert isinstance(restored, And)
+    assert type(restored.nested[0]) is type(with_param(1))
+
+
+def test_not_satisfied_pickle_decorated(entity: SomeEntity):
+    crit = with_param(2)
+    with pytest.raises(CriteriaNotSatisfied) as info:
+        crit.must_be_satisfied_by(entity)
+    restored = pickle.loads(pickle.dumps(info.value))
+    assert isinstance(restored, CriteriaNotSatisfied)
+    assert type(restored.criteria) is type(crit)
+    assert restored.criteria == crit
+
+
+def test_deepcopy_decorated_criteria():
+    original = with_param(2)
+    copied = copy.deepcopy(original)
+    assert copied == original
+    assert copied is not original
+    assert type(copied) is type(original)
+
+
+def test_pickle_local_criteria_raises():
+    @criteria
+    def local(entity: SomeEntity) -> bool:
+        return True
+
+    with pytest.raises(pickle.PicklingError, match='local'):
+        pickle.dumps(local())

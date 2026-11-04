@@ -204,7 +204,8 @@ class And(CompositeCriteria[Object]):
         return And(*self.nested, *other_nested)
 
     def is_satisfied_by(self, candidate: Object) -> bool:
-        return all((            criteria.is_satisfied_by(candidate)
+        return all((
+            criteria.is_satisfied_by(candidate)
             for criteria in self.nested
         ))
 
@@ -343,7 +344,8 @@ class Xor(BinaryCriteria[Object]):
         )
 
 
-class ReturnsTrue(Criteria[Object]):
+class _ConstantCriteria(Criteria[Object]):
+    """Общая часть критериев-констант: repr, равенство и хеш по точному типу."""
 
     def __repr__(self) -> str:
         return f'{type(self).__name__}()'
@@ -355,23 +357,15 @@ class ReturnsTrue(Criteria[Object]):
 
     def __hash__(self) -> int:
         return hash(type(self))
+
+
+class ReturnsTrue(_ConstantCriteria[Object]):
 
     def is_satisfied_by(self, candidate: Object) -> bool:
         return True
 
 
-class ReturnsFalse(Criteria[Object]):
-
-    def __repr__(self) -> str:
-        return f'{type(self).__name__}()'
-
-    def __eq__(self, other: object) -> bool:
-        if type(self) is not type(other):
-            return NotImplemented
-        return True
-
-    def __hash__(self) -> int:
-        return hash(type(self))
+class ReturnsFalse(_ConstantCriteria[Object]):
 
     def is_satisfied_by(self, candidate: Object) -> bool:
         return False
