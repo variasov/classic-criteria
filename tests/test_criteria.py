@@ -4,17 +4,25 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from unittest import mock
 
-import pytest
-
 import classic.criteria
+import pytest
 from classic.criteria import (
-    And, BinaryCriteria, CompositeCriteria, Criteria, CriteriaNotSatisfied,
-    Invert, Or, ReturnsFalse, ReturnsTrue, UnaryCriteria, Xor, criteria,
+    And,
+    BinaryCriteria,
+    CompositeCriteria,
+    Criteria,
+    CriteriaNotSatisfied,
+    Invert,
+    Or,
+    ReturnsFalse,
+    ReturnsTrue,
+    UnaryCriteria,
+    Xor,
+    criteria,
 )
 
 
 class SomeEntity:
-
     def __init__(self, value: int | None) -> None:
         self.value = value
 
@@ -30,7 +38,6 @@ class SomeEntity:
 
 
 class CriteriaWithParam(Criteria[SomeEntity]):
-
     def __init__(self, value: int) -> None:
         self.value = value
 
@@ -39,7 +46,6 @@ class CriteriaWithParam(Criteria[SomeEntity]):
 
 
 class CriteriaWithoutParam(Criteria[SomeEntity]):
-
     def is_satisfied_by(self, candidate: SomeEntity) -> bool:
         return candidate.value is not None
 
@@ -76,16 +82,19 @@ def test_instance(entity: SomeEntity):
         entity.with_param.must_be_satisfied(2)
 
 
-@pytest.mark.parametrize('criteria_', (
-    SomeEntity.with_param(1),
-    SomeEntity.with_param(1) & SomeEntity.without_param(),
-    SomeEntity.with_param(1) & with_param(1),
-    SomeEntity.with_param(1) & without_param(),
-    SomeEntity.with_param(1) & SomeEntity.rule,
-    CriteriaWithParam(1),
-    CriteriaWithParam(1) & CriteriaWithoutParam(),
-    CriteriaWithParam(1) & SomeEntity.with_param(1),
-))
+@pytest.mark.parametrize(
+    "criteria_",
+    (
+        SomeEntity.with_param(1),
+        SomeEntity.with_param(1) & SomeEntity.without_param(),
+        SomeEntity.with_param(1) & with_param(1),
+        SomeEntity.with_param(1) & without_param(),
+        SomeEntity.with_param(1) & SomeEntity.rule,
+        CriteriaWithParam(1),
+        CriteriaWithParam(1) & CriteriaWithoutParam(),
+        CriteriaWithParam(1) & SomeEntity.with_param(1),
+    ),
+)
 def test_class_criteria(criteria_: Criteria[SomeEntity], entity: SomeEntity):
     assert criteria_(entity) is True
     assert criteria_.is_satisfied_by(entity) is True
@@ -179,7 +188,6 @@ class Period:
 
 
 class Event:
-
     def __init__(self, day: int) -> None:
         self.day = day
 
@@ -232,12 +240,11 @@ def test_list_param_is_not_copied():
 def test_instance_attributes_and_class_name():
     period = Period(1, 5)
     c = in_period(period)
-    assert type(c).__name__ == 'in_period'
+    assert type(c).__name__ == "in_period"
     assert c.period is period
 
 
 class KwEntity:
-
     @criteria
     def kw_default(self, *, x: int = 0) -> bool:
         return x == 7
@@ -278,12 +285,14 @@ def test_positional_only():
 
 
 def test_var_args_are_rejected():
-    with pytest.raises(TypeError, match='args'):
+    with pytest.raises(TypeError, match="args"):
+
         @criteria
         def with_args(entity: Event, *args: int) -> bool:
             return True
 
-    with pytest.raises(TypeError, match='kwargs'):
+    with pytest.raises(TypeError, match="kwargs"):
+
         @criteria
         def with_kwargs(entity: Event, **kwargs: int) -> bool:
             return True
@@ -296,7 +305,7 @@ def test_not_satisfied_is_regular_exception():
     except Exception as exc:
         assert isinstance(exc, CriteriaNotSatisfied)
     else:
-        pytest.fail('Исключение не выброшено')
+        pytest.fail("Исключение не выброшено")
 
 
 def test_not_satisfied_single_criteria(entity: SomeEntity):
@@ -335,7 +344,7 @@ def test_not_satisfied_message(entity: SomeEntity):
     crit = CriteriaWithParam(2)
     with pytest.raises(CriteriaNotSatisfied) as info:
         crit.must_be_satisfied_by(entity)
-    assert str(info.value).startswith('Критерий не выполнен: ')
+    assert str(info.value).startswith("Критерий не выполнен: ")
     assert repr(crit) in str(info.value)
 
 
@@ -369,46 +378,41 @@ def test_predicate_called_once_on_must_be_satisfied(entity: SomeEntity):
 
 def test_repr_composite():
     assert repr(with_param(1) & with_param(2)) == (
-        'And(with_param(value=1), with_param(value=2))'
+        "And(with_param(value=1), with_param(value=2))"
     )
     assert repr(with_param(1) | without_param()) == (
-        'Or(with_param(value=1), without_param())'
+        "Or(with_param(value=1), without_param())"
     )
-    assert repr(And()) == 'And()'
+    assert repr(And()) == "And()"
 
 
 def test_repr_unary_and_binary():
-    assert repr(~with_param(1)) == 'Invert(with_param(value=1))'
+    assert repr(~with_param(1)) == "Invert(with_param(value=1))"
     assert repr(with_param(1) ^ with_param(2)) == (
-        'Xor(with_param(value=1), with_param(value=2))'
+        "Xor(with_param(value=1), with_param(value=2))"
     )
 
 
 def test_repr_nested_combination():
     a, b, c = with_param(1), with_param(2), with_param(3)
     assert repr(~(a & b) | c) == (
-        'Or(Invert(And(with_param(value=1), with_param(value=2))), '
-        'with_param(value=3))'
+        "Or(Invert(And(with_param(value=1), with_param(value=2))), with_param(value=3))"
     )
 
 
 def test_repr_returns_constants_and_subclass_name():
-    assert repr(ReturnsTrue()) == 'ReturnsTrue()'
-    assert repr(ReturnsFalse()) == 'ReturnsFalse()'
+    assert repr(ReturnsTrue()) == "ReturnsTrue()"
+    assert repr(ReturnsFalse()) == "ReturnsFalse()"
 
     class MyAnd(And):
         pass
 
-    assert repr(MyAnd(with_param(1))) == 'MyAnd(with_param(value=1))'
+    assert repr(MyAnd(with_param(1))) == "MyAnd(with_param(value=1))"
 
 
 def test_repr_user_criteria_keeps_default():
-    assert repr(CriteriaWithParam(1) & with_param(1)).startswith(
-        'And(<'
-    )
-    assert repr(CriteriaWithParam(1) & with_param(1)).endswith(
-        ', with_param(value=1))'
-    )
+    assert repr(CriteriaWithParam(1) & with_param(1)).startswith("And(<")
+    assert repr(CriteriaWithParam(1) & with_param(1)).endswith(", with_param(value=1))")
 
 
 def test_eq_composite():
@@ -449,7 +453,7 @@ def test_eq_with_non_criteria():
         ReturnsTrue(),
     ):
         assert crit != 1
-        assert not crit == 'text'
+        assert not crit == "text"
         assert crit != None  # noqa: E711
 
 
@@ -494,12 +498,16 @@ def test_mock_assert_called_with_composite_criteria():
 
 def test_exports():
     for name in (
-        'ReturnsTrue', 'ReturnsFalse', 'CompositeCriteria',
-        'UnaryCriteria', 'BinaryCriteria',
+        "ReturnsTrue",
+        "ReturnsFalse",
+        "CompositeCriteria",
+        "UnaryCriteria",
+        "BinaryCriteria",
     ):
         assert name in classic.criteria.__all__
     assert list(classic.criteria.__all__) == sorted(
-        classic.criteria.__all__, key=lambda n: (n[0].islower(), n),
+        classic.criteria.__all__,
+        key=lambda n: (n[0].islower(), n),
     )
     assert issubclass(And, CompositeCriteria)
     assert issubclass(Invert, UnaryCriteria)
@@ -516,7 +524,7 @@ def test_returns_constants_hash_and_type_equality():
 
 
 def test_criteria_rejects_non_callable():
-    with pytest.raises(TypeError, match='вызываем'):
+    with pytest.raises(TypeError, match="вызываем"):
         criteria(1)  # type: ignore[call-overload]
 
 
@@ -532,13 +540,17 @@ def reserved_keyword(entity: SomeEntity, *, _keyword: int) -> bool:
     return True
 
 
-@pytest.mark.parametrize(('fn', 'name'), (
-    (reserved_predicate, 'predicate'),
-    (reserved_positional, '_positional'),
-    (reserved_keyword, '_keyword'),
-))
+@pytest.mark.parametrize(
+    ("fn", "name"),
+    (
+        (reserved_predicate, "predicate"),
+        (reserved_positional, "_positional"),
+        (reserved_keyword, "_keyword"),
+    ),
+)
 def test_reserved_parameter_names(
-    fn: Callable[..., bool], name: str,
+    fn: Callable[..., bool],
+    name: str,
 ):
     with pytest.raises(TypeError, match=name):
         criteria(fn)
@@ -609,5 +621,5 @@ def test_pickle_local_criteria_raises():
     def local(entity: SomeEntity) -> bool:
         return True
 
-    with pytest.raises(pickle.PicklingError, match='local'):
+    with pytest.raises(pickle.PicklingError, match="local"):
         pickle.dumps(local())

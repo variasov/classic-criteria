@@ -2,20 +2,17 @@ from typing import Generic, Optional, Protocol, TypeVar, Union, cast, overload
 
 from .errors import CriteriaNotSatisfied
 
-
-Object = TypeVar('Object')
+Object = TypeVar("Object")
 CriteriaNodeObj = TypeVar(
-    'CriteriaNodeObj', contravariant=True,
+    "CriteriaNodeObj",
+    contravariant=True,
 )
 
 
 class CriteriaNode(Protocol[CriteriaNodeObj]):
+    def is_satisfied_by(self, candidate: CriteriaNodeObj) -> bool: ...
 
-    def is_satisfied_by(self, candidate: CriteriaNodeObj) -> bool:
-        ...
-
-    def must_be_satisfied_by(self, candidate: CriteriaNodeObj) -> None:
-        ...
+    def must_be_satisfied_by(self, candidate: CriteriaNodeObj) -> None: ...
 
 
 class Criteria(Generic[Object]):
@@ -73,23 +70,26 @@ class Criteria(Generic[Object]):
     """
 
     def __and__(
-        self, other: 'Criteria[Object]',
-    ) -> 'Criteria[Object]':
+        self,
+        other: "Criteria[Object]",
+    ) -> "Criteria[Object]":
         return And(self, other)
 
     def __or__(
-        self, other: 'Criteria[Object]',
-    ) -> 'Criteria[Object]':
+        self,
+        other: "Criteria[Object]",
+    ) -> "Criteria[Object]":
         return Or(self, other)
 
     def __xor__(
-        self, other: 'Criteria[Object]',
-    ) -> 'Criteria[Object]':
+        self,
+        other: "Criteria[Object]",
+    ) -> "Criteria[Object]":
         return Xor(self, other)
 
     def __invert__(
-        self: 'Criteria[Object]',
-    ) -> 'Criteria[Object]':
+        self: "Criteria[Object]",
+    ) -> "Criteria[Object]":
         return Invert(self)
 
     def is_satisfied_by(self, candidate: Object) -> bool:
@@ -105,7 +105,7 @@ class Criteria(Generic[Object]):
 
     def remainder_unsatisfied_by(
         self, candidate: Object
-    ) -> Optional['Criteria[Object]']:
+    ) -> Optional["Criteria[Object]"]:
         if self.is_satisfied_by(candidate):
             return None
         else:
@@ -113,24 +113,25 @@ class Criteria(Generic[Object]):
 
     @overload
     def __get__(
-        self, instance: Object,
+        self,
+        instance: Object,
         owner: type[Object],
-    ) -> 'BoundFormedCriteria[Object]':
-        ...
+    ) -> "BoundFormedCriteria[Object]": ...
 
     @overload
     def __get__(
-        self, instance: None,
+        self,
+        instance: None,
         owner: type[Object],
-    ) -> 'Criteria[Object]':
-        ...
+    ) -> "Criteria[Object]": ...
 
     def __get__(
-        self, instance: Optional[Object],
+        self,
+        instance: Optional[Object],
         owner: type[Object],
     ) -> Union[
-         'BoundFormedCriteria[Object]',
-         'Criteria[Object]',
+        "BoundFormedCriteria[Object]",
+        "Criteria[Object]",
     ]:
         if instance is not None:
             return BoundFormedCriteria(instance, self)
@@ -142,7 +143,8 @@ class BoundFormedCriteria(Generic[Object]):
     _criteria: object
 
     def __init__(
-        self, instance: Object,
+        self,
+        instance: Object,
         criteria: Criteria[Object],
     ) -> None:
         self.instance = instance
@@ -168,14 +170,15 @@ class CompositeCriteria(Criteria[Object]):
 
     Используется внутри библиотеки.
     """
+
     nested: list[Criteria[Object]]
 
     def __init__(self, *criteria: Criteria[Object]):
         self.nested = list(criteria)
 
     def __repr__(self) -> str:
-        nested = ', '.join(repr(criteria) for criteria in self.nested)
-        return f'{type(self).__name__}({nested})'
+        nested = ", ".join(repr(criteria) for criteria in self.nested)
+        return f"{type(self).__name__}({nested})"
 
     def __eq__(self, other: object) -> bool:
         if type(self) is not type(other):
@@ -204,13 +207,11 @@ class And(CompositeCriteria[Object]):
         return And(*self.nested, *other_nested)
 
     def is_satisfied_by(self, candidate: Object) -> bool:
-        return all((
-            criteria.is_satisfied_by(candidate)
-            for criteria in self.nested
-        ))
+        return all((criteria.is_satisfied_by(candidate) for criteria in self.nested))
 
     def remainder_unsatisfied_by(
-        self, candidate: Object,
+        self,
+        candidate: Object,
     ) -> Criteria[Object] | None:
 
         non_satisfied = [
@@ -242,10 +243,7 @@ class Or(CompositeCriteria[Object]):
         return Or(*self.nested, *other_nested)
 
     def is_satisfied_by(self, candidate: Object) -> bool:
-        return any((
-            criteria.is_satisfied_by(candidate)
-            for criteria in self.nested
-        ))
+        return any((criteria.is_satisfied_by(candidate) for criteria in self.nested))
 
 
 class UnaryCriteria(Criteria[Object]):
@@ -254,13 +252,14 @@ class UnaryCriteria(Criteria[Object]):
 
     Используется внутри библиотеки.
     """
+
     _nested: object
 
     def __init__(self, criteria: Criteria[Object]) -> None:
         self._nested = criteria
 
     def __repr__(self) -> str:
-        return f'{type(self).__name__}({self._nested!r})'
+        return f"{type(self).__name__}({self._nested!r})"
 
     def __eq__(self, other: object) -> bool:
         if type(self) is not type(other):
@@ -294,18 +293,20 @@ class BinaryCriteria(Criteria[Object]):
 
     Используется внутри библиотеки.
     """
+
     _left: object
     _right: object
 
     def __init__(
-        self, left: Criteria[Object],
+        self,
+        left: Criteria[Object],
         right: Criteria[Object],
     ) -> None:
         self._left = left
         self._right = right
 
     def __repr__(self) -> str:
-        return f'{type(self).__name__}({self._left!r}, {self._right!r})'
+        return f"{type(self).__name__}({self._left!r}, {self._right!r})"
 
     def __eq__(self, other: object) -> bool:
         if type(self) is not type(other):
@@ -338,9 +339,8 @@ class Xor(BinaryCriteria[Object]):
     """
 
     def is_satisfied_by(self, candidate: Object) -> bool:
-        return (
-            self.left.is_satisfied_by(candidate) ^
-            self.right.is_satisfied_by(candidate)
+        return self.left.is_satisfied_by(candidate) ^ self.right.is_satisfied_by(
+            candidate
         )
 
 
@@ -348,7 +348,7 @@ class _ConstantCriteria(Criteria[Object]):
     """Общая часть критериев-констант: repr, равенство и хеш по точному типу."""
 
     def __repr__(self) -> str:
-        return f'{type(self).__name__}()'
+        return f"{type(self).__name__}()"
 
     def __eq__(self, other: object) -> bool:
         if type(self) is not type(other):
@@ -360,12 +360,10 @@ class _ConstantCriteria(Criteria[Object]):
 
 
 class ReturnsTrue(_ConstantCriteria[Object]):
-
     def is_satisfied_by(self, candidate: Object) -> bool:
         return True
 
 
 class ReturnsFalse(_ConstantCriteria[Object]):
-
     def is_satisfied_by(self, candidate: Object) -> bool:
         return False

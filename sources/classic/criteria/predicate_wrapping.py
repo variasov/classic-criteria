@@ -1,19 +1,28 @@
 import importlib
 import inspect
 import pickle
-
-from dataclasses import make_dataclass, field
-from typing import Callable, ClassVar, Concatenate, ParamSpec, Any, Generic, TypeVar, Union, cast, overload
+from dataclasses import field, make_dataclass
+from typing import (
+    Any,
+    Callable,
+    ClassVar,
+    Concatenate,
+    Generic,
+    ParamSpec,
+    TypeVar,
+    Union,
+    cast,
+    overload,
+)
 
 from .criteria import Criteria
 
-
-Object = TypeVar('Object')
-Params = ParamSpec('Params')
+Object = TypeVar("Object")
+Params = ParamSpec("Params")
 Predicate = Callable[Concatenate[Object, Params], bool]
 
 # Служебные атрибуты PredicateCriteria, не могут быть именами параметров.
-_RESERVED_NAMES = ('predicate', '_positional', '_keyword')
+_RESERVED_NAMES = ("predicate", "_positional", "_keyword")
 
 
 class PredicateCriteria(Criteria[Object], Generic[Object, Params]):
@@ -38,15 +47,16 @@ class PredicateCriteria(Criteria[Object], Generic[Object, Params]):
         descriptor = _find_descriptor(module, qualname)
         if descriptor is None or descriptor.criteria_cls is not type(self):
             raise pickle.PicklingError(
-                f'Критерий {qualname!r} нельзя сериализовать: по пути '
-                f'{module}.{qualname} не найден дескриптор, созданный '
-                f'декоратором criteria для этого критерия (локальная '
-                f'функция или переопределённое имя)'
+                f"Критерий {qualname!r} нельзя сериализовать: по пути "
+                f"{module}.{qualname} не найден дескриптор, созданный "
+                f"декоратором criteria для этого критерия (локальная "
+                f"функция или переопределённое имя)"
             )
         return (
             _restore_predicate_criteria,
             (
-                module, qualname,
+                module,
+                qualname,
                 tuple(getattr(self, name) for name in self._positional),
                 {name: getattr(self, name) for name in self._keyword},
             ),
@@ -58,7 +68,8 @@ class BoundUnformedCriteria(Generic[Object, Params]):
     criteria_cls: type[PredicateCriteria[Object, Params]]
 
     def __init__(
-        self, instance: Object,
+        self,
+        instance: Object,
         criteria_cls: type[PredicateCriteria[Object, Params]],
     ) -> None:
         self.instance = instance
@@ -69,15 +80,18 @@ class BoundUnformedCriteria(Generic[Object, Params]):
 
     def is_satisfied(self, *args: Params.args, **kwargs: Params.kwargs) -> bool:
         return self.criteria_cls(
-            *args, **kwargs,
+            *args,
+            **kwargs,
         ).is_satisfied_by(self.instance)
 
     def must_be_satisfied(
-        self, *args: Params.args,
+        self,
+        *args: Params.args,
         **kwargs: Params.kwargs,
     ) -> None:
         self.criteria_cls(
-            *args, **kwargs,
+            *args,
+            **kwargs,
         ).must_be_satisfied_by(self.instance)
 
 
@@ -85,35 +99,39 @@ class CriteriaDescriptor(Generic[Object, Params]):
     criteria_cls: type[PredicateCriteria[Object, Params]]
 
     def __init__(
-        self, criteria_cls: type[PredicateCriteria[Object, Params]],
+        self,
+        criteria_cls: type[PredicateCriteria[Object, Params]],
     ) -> None:
         self.criteria_cls = criteria_cls
 
     def __call__(
-        self, *args: Params.args, **kwargs: Params.kwargs,
+        self,
+        *args: Params.args,
+        **kwargs: Params.kwargs,
     ) -> Criteria[Object]:
         return self.criteria_cls(*args, **kwargs)
 
     @overload
     def __get__(
-        self, instance: Object,
+        self,
+        instance: Object,
         owner: type[Object],
-    ) -> BoundUnformedCriteria[Object, Params]:
-        ...
+    ) -> BoundUnformedCriteria[Object, Params]: ...
 
     @overload
     def __get__(
-        self, instance: None,
+        self,
+        instance: None,
         owner: type[Object],
-    ) -> 'CriteriaDescriptor[Object, Params]':
-        ...
+    ) -> "CriteriaDescriptor[Object, Params]": ...
 
     def __get__(
-        self, instance: Object | None,
+        self,
+        instance: Object | None,
         owner: type[Object],
     ) -> Union[
-         BoundUnformedCriteria[Object, Params],
-         'CriteriaDescriptor[Object, Params]',
+        BoundUnformedCriteria[Object, Params],
+        "CriteriaDescriptor[Object, Params]",
     ]:
         if instance is not None:
             return BoundUnformedCriteria(instance, self.criteria_cls)
@@ -121,31 +139,32 @@ class CriteriaDescriptor(Generic[Object, Params]):
 
 
 def _find_descriptor(
-    module: str, qualname: str,
-) -> 'CriteriaDescriptor[Any, ...] | None':
+    module: str,
+    qualname: str,
+) -> "CriteriaDescriptor[Any, ...] | None":
     """Находит CriteriaDescriptor по пути module.qualname или None."""
     try:
         obj: Any = importlib.import_module(module)
-        for part in qualname.split('.'):
-            if part == '<locals>':
+        for part in qualname.split("."):
+            if part == "<locals>":
                 return None
             obj = getattr(obj, part)
     except (ImportError, AttributeError):
         return None
     if not isinstance(obj, CriteriaDescriptor):
         return None
-    return cast('CriteriaDescriptor[Any, ...]', obj)
+    return cast("CriteriaDescriptor[Any, ...]", obj)
 
 
 def _restore_predicate_criteria(
-    module: str, qualname: str,
-    args: tuple[Any, ...], kwargs: dict[str, Any],
+    module: str,
+    qualname: str,
+    args: tuple[Any, ...],
+    kwargs: dict[str, Any],
 ) -> PredicateCriteria[Any, Any]:
     descriptor = _find_descriptor(module, qualname)
     if descriptor is None:
-        raise pickle.UnpicklingError(
-            f'Не найден критерий {module}.{qualname}'
-        )
+        raise pickle.UnpicklingError(f"Не найден критерий {module}.{qualname}")
     return descriptor.criteria_cls(*args, **kwargs)
 
 
@@ -165,25 +184,28 @@ def make_predicate_criteria(
 
         if name in _RESERVED_NAMES:
             raise TypeError(
-                f'Критерий {fn.__name__!r}: имя параметра {name!r} '
-                f'зарезервировано (служебные имена: '
-                f'{", ".join(_RESERVED_NAMES)})'
+                f"Критерий {fn.__name__!r}: имя параметра {name!r} "
+                f"зарезервировано (служебные имена: "
+                f"{', '.join(_RESERVED_NAMES)})"
             )
 
         if param.kind in (param.VAR_POSITIONAL, param.VAR_KEYWORD):
             raise TypeError(
-                f'Критерий {fn.__name__!r}: параметр {name!r} '
-                f'({param.kind.description}) не поддерживается, '
-                f'так как не может быть полем критерия'
+                f"Критерий {fn.__name__!r}: параметр {name!r} "
+                f"({param.kind.description}) не поддерживается, "
+                f"так как не может быть полем критерия"
             )
 
         kw_only = param.kind is param.KEYWORD_ONLY
         (keyword if kw_only else positional).append(name)
         if param.default is not param.empty:
-            annotations.append((
-                name, annotation,
-                field(default=param.default, kw_only=kw_only),
-            ))
+            annotations.append(
+                (
+                    name,
+                    annotation,
+                    field(default=param.default, kw_only=kw_only),
+                )
+            )
         elif kw_only:
             annotations.append((name, annotation, field(kw_only=True)))
         else:
@@ -194,9 +216,9 @@ def make_predicate_criteria(
         annotations,
         bases=(PredicateCriteria,),
         namespace={
-            'predicate': staticmethod(fn),
-            '_positional': tuple(positional),
-            '_keyword': tuple(keyword),
+            "predicate": staticmethod(fn),
+            "_positional": tuple(positional),
+            "_keyword": tuple(keyword),
         },
     )
     new_cls.__module__ = fn.__module__
@@ -247,10 +269,6 @@ def criteria(
     True
     """
     if not callable(fn):
-        raise TypeError(
-            f'criteria ожидает вызываемый объект, получено: {fn!r}'
-        )
+        raise TypeError(f"criteria ожидает вызываемый объект, получено: {fn!r}")
 
-    return CriteriaDescriptor[Object, Params](
-        make_predicate_criteria(fn)
-    )
+    return CriteriaDescriptor[Object, Params](make_predicate_criteria(fn))
