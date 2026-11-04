@@ -99,8 +99,9 @@ class Criteria(Generic[Object]):
         return self.is_satisfied_by(candidate)
 
     def must_be_satisfied_by(self, candidate: Object) -> None:
-        if not self.is_satisfied_by(candidate):
-            raise CriteriaNotSatisfied
+        remainder = self.remainder_unsatisfied_by(candidate)
+        if remainder is not None:
+            raise CriteriaNotSatisfied(remainder)
 
     def remainder_unsatisfied_by(
         self, candidate: Object

@@ -1,3 +1,4 @@
+import pickle
 from dataclasses import dataclass
 
 import pytest
@@ -279,3 +280,81 @@ def test_var_args_are_rejected():
         @criteria
         def with_kwargs(entity: Event, **kwargs: int) -> bool:
             return True
+
+
+def test_not_satisfied_is_regular_exception():
+    assert issubclass(CriteriaNotSatisfied, Exception)
+    try:
+        CriteriaWithParam(2).must_be_satisfied_by(SomeEntity(1))
+    except Exception as exc:
+        assert isinstance(exc, CriteriaNotSatisfied)
+    else:
+        pytest.fail('Исключение не выброшено')
+
+
+def test_not_satisfied_single_criteria(entity: SomeEntity):
+    crit = CriteriaWithParam(2)
+    with pytest.raises(CriteriaNotSatisfied) as info:
+        crit.must_be_satisfied_by(entity)
+    assert info.value.criteria is crit
+
+
+def test_not_satisfied_contains_only_unsatisfied_part(entity: SomeEntity):
+    a = CriteriaWithParam(1)
+    b = CriteriaWithParam(2)
+    c = CriteriaWithParam(3)
+
+    with pytest.raises(CriteriaNotSatisfied) as info:
+        (a & b & CriteriaWithoutParam()).must_be_satisfied_by(entity)
+    assert info.value.criteria is b
+
+    with pytest.raises(CriteriaNotSatisfied) as info:
+        (a & b & c).must_be_satisfied_by(entity)
+    assert isinstance(info.value.criteria, And)
+    assert info.value.criteria.nested == [b, c]
+
+
+def test_not_satisfied_bound(entity: SomeEntity):
+    with pytest.raises(CriteriaNotSatisfied) as info:
+        entity.with_param.must_be_satisfied(2)
+    assert info.value.criteria == SomeEntity.with_param(2)
+
+    with pytest.raises(CriteriaNotSatisfied) as info:
+        SomeEntity(None).rule.must_be_satisfied()
+    assert info.value.criteria is SomeEntity.rule
+
+
+def test_not_satisfied_message(entity: SomeEntity):
+    crit = CriteriaWithParam(2)
+    with pytest.raises(CriteriaNotSatisfied) as info:
+        crit.must_be_satisfied_by(entity)
+    assert str(info.value).startswith('Критерий не выполнен: ')
+    assert repr(crit) in str(info.value)
+
+
+def test_not_satisfied_pickle(entity: SomeEntity):
+    crit = CriteriaWithParam(2)
+    with pytest.raises(CriteriaNotSatisfied) as info:
+        crit.must_be_satisfied_by(entity)
+    restored = pickle.loads(pickle.dumps(info.value))
+    assert isinstance(restored, CriteriaNotSatisfied)
+    assert isinstance(restored.criteria, CriteriaWithParam)
+    assert restored.criteria.value == 2
+
+
+def test_predicate_called_once_on_must_be_satisfied(entity: SomeEntity):
+    calls: list[int] = []
+
+    @criteria
+    def counted(e: SomeEntity) -> bool:
+        calls.append(1)
+        return False
+
+    with pytest.raises(CriteriaNotSatisfied):
+        counted().must_be_satisfied_by(entity)
+    assert len(calls) == 1
+
+    calls.clear()
+    with pytest.raises(CriteriaNotSatisfied):
+        (counted() & CriteriaWithParam(1)).must_be_satisfied_by(entity)
+    assert len(calls) == 1
