@@ -1,9 +1,15 @@
 import pickle
 from dataclasses import dataclass
+from unittest import mock
 
 import pytest
 
-from classic.criteria import And, Criteria, CriteriaNotSatisfied, Or, criteria
+from classic.criteria import (
+    And, Criteria, CriteriaNotSatisfied, Invert, Or, Xor, criteria,
+)
+# TODO: ReturnsTrue и ReturnsFalse пока не экспортированы из classic.criteria,
+# после добавления экспорта импортировать оттуда.
+from classic.criteria.criteria import ReturnsFalse, ReturnsTrue
 
 
 class SomeEntity:
@@ -358,3 +364,128 @@ def test_predicate_called_once_on_must_be_satisfied(entity: SomeEntity):
     with pytest.raises(CriteriaNotSatisfied):
         (counted() & CriteriaWithParam(1)).must_be_satisfied_by(entity)
     assert len(calls) == 1
+
+
+def test_repr_composite():
+    assert repr(with_param(1) & with_param(2)) == (
+        'And(with_param(value=1), with_param(value=2))'
+    )
+    assert repr(with_param(1) | without_param()) == (
+        'Or(with_param(value=1), without_param())'
+    )
+    assert repr(And()) == 'And()'
+
+
+def test_repr_unary_and_binary():
+    assert repr(~with_param(1)) == 'Invert(with_param(value=1))'
+    assert repr(with_param(1) ^ with_param(2)) == (
+        'Xor(with_param(value=1), with_param(value=2))'
+    )
+
+
+def test_repr_nested_combination():
+    a, b, c = with_param(1), with_param(2), with_param(3)
+    assert repr(~(a & b) | c) == (
+        'Or(Invert(And(with_param(value=1), with_param(value=2))), '
+        'with_param(value=3))'
+    )
+
+
+def test_repr_returns_constants_and_subclass_name():
+    assert repr(ReturnsTrue()) == 'ReturnsTrue()'
+    assert repr(ReturnsFalse()) == 'ReturnsFalse()'
+
+    class MyAnd(And):
+        pass
+
+    assert repr(MyAnd(with_param(1))) == 'MyAnd(with_param(value=1))'
+
+
+def test_repr_user_criteria_keeps_default():
+    assert repr(CriteriaWithParam(1) & with_param(1)).startswith(
+        'And(<'
+    )
+    assert repr(CriteriaWithParam(1) & with_param(1)).endswith(
+        ', with_param(value=1))'
+    )
+
+
+def test_eq_composite():
+    assert with_param(1) & with_param(2) == with_param(1) & with_param(2)
+    assert with_param(1) | with_param(2) == with_param(1) | with_param(2)
+    assert not (with_param(1) & with_param(2) != with_param(1) & with_param(2))
+
+
+def test_not_eq_composite():
+    assert with_param(1) & with_param(2) != with_param(2) & with_param(1)
+    assert with_param(1) & with_param(2) != with_param(1) | with_param(2)
+    assert with_param(1) & with_param(2) != with_param(1) & with_param(3)
+    assert with_param(1) & with_param(2) != with_param(1)
+    assert And(with_param(1)) != Or(with_param(1))
+
+
+def test_eq_unary_and_binary():
+    assert ~with_param(1) == ~with_param(1)
+    assert ~with_param(1) != ~with_param(2)
+    assert ~with_param(1) != with_param(1)
+    assert (with_param(1) ^ with_param(2)) == (with_param(1) ^ with_param(2))
+    assert (with_param(1) ^ with_param(2)) != (with_param(2) ^ with_param(1))
+    assert (with_param(1) ^ with_param(2)) != (with_param(1) ^ with_param(3))
+    assert (with_param(1) ^ with_param(2)) != (with_param(1) | with_param(2))
+
+
+def test_eq_returns_constants():
+    assert ReturnsTrue() == ReturnsTrue()
+    assert ReturnsFalse() == ReturnsFalse()
+    assert ReturnsTrue() != ReturnsFalse()
+
+
+def test_eq_with_non_criteria():
+    for crit in (
+        with_param(1) & with_param(2),
+        ~with_param(1),
+        with_param(1) ^ with_param(2),
+        ReturnsTrue(),
+    ):
+        assert crit != 1
+        assert not crit == 'text'
+        assert crit != None  # noqa: E711
+
+
+def test_eq_subclass_is_not_equal():
+    class MyAnd(And):
+        pass
+
+    assert MyAnd(with_param(1)) != And(with_param(1))
+
+
+def test_hash_of_user_criteria():
+    a = CriteriaWithParam(1)
+    b = CriteriaWithParam(2)
+
+    assert hash(a & b) == hash(a & b)
+    assert hash(~a) == hash(~a)
+    assert hash(a ^ b) == hash(a ^ b)
+    assert hash(ReturnsTrue()) == hash(ReturnsTrue())
+    assert hash(ReturnsTrue()) != hash(ReturnsFalse())
+    assert {a & b, a & b, b & a} == {a & b, b & a}
+    assert len({a & b, a & b, a | b}) == 2
+
+
+def test_hash_with_criteria_decorator_is_unhashable():
+    with pytest.raises(TypeError):
+        hash(with_param(1) & with_param(2))
+    with pytest.raises(TypeError):
+        hash(~with_param(1))
+    with pytest.raises(TypeError):
+        hash(with_param(1) ^ with_param(2))
+
+
+def test_mock_assert_called_with_composite_criteria():
+    repo = mock.Mock()
+
+    repo.find(with_param(1) & without_param())
+
+    repo.find.assert_called_once_with(with_param(1) & without_param())
+    with pytest.raises(AssertionError):
+        repo.find.assert_called_once_with(with_param(2) & without_param())

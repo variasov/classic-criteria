@@ -173,6 +173,18 @@ class CompositeCriteria(Criteria[Object]):
     def __init__(self, *criteria: Criteria[Object]):
         self.nested = list(criteria)
 
+    def __repr__(self) -> str:
+        nested = ', '.join(repr(criteria) for criteria in self.nested)
+        return f'{type(self).__name__}({nested})'
+
+    def __eq__(self, other: object) -> bool:
+        if type(self) is not type(other):
+            return NotImplemented
+        return self.nested == cast(CompositeCriteria[Object], other).nested
+
+    def __hash__(self) -> int:
+        return hash((type(self), tuple(self.nested)))
+
     def is_satisfied_by(self, candidate: Object) -> bool:
         raise NotImplementedError
 
@@ -246,6 +258,17 @@ class UnaryCriteria(Criteria[Object]):
     def __init__(self, criteria: Criteria[Object]) -> None:
         self._nested = criteria
 
+    def __repr__(self) -> str:
+        return f'{type(self).__name__}({self._nested!r})'
+
+    def __eq__(self, other: object) -> bool:
+        if type(self) is not type(other):
+            return NotImplemented
+        return self._nested == cast(UnaryCriteria[Object], other)._nested
+
+    def __hash__(self) -> int:
+        return hash((type(self), self._nested))
+
     @property
     def nested(self) -> CriteriaNode[Object]:
         return cast(CriteriaNode[Object], self._nested)
@@ -280,6 +303,18 @@ class BinaryCriteria(Criteria[Object]):
         self._left = left
         self._right = right
 
+    def __repr__(self) -> str:
+        return f'{type(self).__name__}({self._left!r}, {self._right!r})'
+
+    def __eq__(self, other: object) -> bool:
+        if type(self) is not type(other):
+            return NotImplemented
+        other_ = cast(BinaryCriteria[Object], other)
+        return self._left == other_._left and self._right == other_._right
+
+    def __hash__(self) -> int:
+        return hash((type(self), self._left, self._right))
+
     @property
     def left(self) -> CriteriaNode[Object]:
         return cast(CriteriaNode[Object], self._left)
@@ -310,11 +345,33 @@ class Xor(BinaryCriteria[Object]):
 
 class ReturnsTrue(Criteria[Object]):
 
+    def __repr__(self) -> str:
+        return f'{type(self).__name__}()'
+
+    def __eq__(self, other: object) -> bool:
+        if type(self) is not type(other):
+            return NotImplemented
+        return True
+
+    def __hash__(self) -> int:
+        return hash(type(self))
+
     def is_satisfied_by(self, candidate: Object) -> bool:
         return True
 
 
 class ReturnsFalse(Criteria[Object]):
+
+    def __repr__(self) -> str:
+        return f'{type(self).__name__}()'
+
+    def __eq__(self, other: object) -> bool:
+        if type(self) is not type(other):
+            return NotImplemented
+        return True
+
+    def __hash__(self) -> int:
+        return hash(type(self))
 
     def is_satisfied_by(self, candidate: Object) -> bool:
         return False
