@@ -1,6 +1,7 @@
 import copy
 import dataclasses
 import functools
+import itertools
 import pickle
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -523,6 +524,25 @@ def test_order_independent_deep_in_tree():
 
     # And внутри Invert: порядок тоже не важен
     assert ~(with_param(1) & with_param(2)) == ~(with_param(2) & with_param(1))
+
+
+def test_eq_hash_contract_on_permutations():
+    # Контракт eq -> hash и равенство на всех перестановках с дубликатами
+    base = [with_param(1), with_param(1), with_param(2)]
+    crits = [And(*p) for p in itertools.permutations(base)]
+    crits += [Or(*p) for p in itertools.permutations(base)]
+
+    for a, b in itertools.combinations(crits, 2):
+        same_type = type(a) is type(b)
+        if same_type:
+            assert a == b
+            assert hash(a) == hash(b)
+        else:
+            assert a != b
+
+    # разное число повторов - разные критерии
+    assert And(with_param(1), with_param(1)) != And(with_param(1), with_param(2))
+    assert len({*crits}) == 2  # And и Or
 
 
 def test_copy_and_deepcopy_composite():
