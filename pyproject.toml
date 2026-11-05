@@ -7,11 +7,11 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "classic-criteria"
-version = "0.2.1"
+version = "1.0.0"
 authors = [
     {name = "Sergey Variasov", email = "variasov@gmail.com"},
 ]
-description = "Provides basic DDD primitives"
+description = "Criteria (specifications) for DDD domain models"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = []
