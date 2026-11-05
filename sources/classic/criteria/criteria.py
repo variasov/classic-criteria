@@ -1,3 +1,5 @@
+"""Базовый класс критериев, составные критерии и их привязка к объектам."""
+
 from typing import Generic, Optional, Protocol, TypeVar, Union, cast, overload
 
 from .errors import CriteriaNotSatisfied
@@ -10,95 +12,146 @@ CriteriaNodeObj = TypeVar(
 
 
 class CriteriaNode(Protocol[CriteriaNodeObj]):
-    def is_satisfied_by(self, candidate: CriteriaNodeObj) -> bool: ...
+    """Протокол узла дерева критериев: всё, что умеет проверять кандидата."""
 
-    def must_be_satisfied_by(self, candidate: CriteriaNodeObj) -> None: ...
+    def is_satisfied_by(self, candidate: CriteriaNodeObj) -> bool:
+        """Возвращает True, если кандидат удовлетворяет критерию."""
+        ...
+
+    def must_be_satisfied_by(self, candidate: CriteriaNodeObj) -> None:
+        """Бросает `CriteriaNotSatisfied`, если кандидат не удовлетворяет."""
+        ...
 
 
 class Criteria(Generic[Object]):
-    """
-    Базовый класс для критериев.
+    """Базовый класс критериев (спецификаций).
 
-    Нужен для описания критериев объектов, чтобы затем определять,
-    соответствуют ли те или иные объекты критерию, или для формирования запроса,
-    к примеру, в SQL-хранилище.
+    Критерий описывает условие на объект. Им можно проверить объект
+    в памяти (`is_satisfied_by`) или оттранслировать его в запрос, например
+    в SQL через classic-db-tools: там макрос ищется по имени класса критерия
+    (для критериев из `@criteria` - по имени функции).
 
-    Взято отсюда и доработано:
-    https://gist.github.com/palankai/f73a18ce06751ab8f245
+    Чтобы определить свой критерий, наследуйтесь от `Criteria` и переопределите
+    `is_satisfied_by`. Критерии комбинируются операторами: `&` даёт `And`,
+    `|` - `Or`, `^` - `Xor`, `~` - `Invert`. Операнды при этом не изменяются,
+    возвращается новый критерий.
 
-    Пример:
-    >>> from datetime import datetime
-    ... from dataclasses import dataclass
-    ... from classic.criteria import Criteria
-    ...
-    ... @dataclass
-    ... class Task:
-    ...     number: int
-    ...     created_at: datetime
-    ...     finished_at: datetime
-    ...
-    ... @dataclass
-    ... class TaskOlderThan(Criteria[Task]):
-    ...     date: datetime
-    ...
-    ...     def is_satisfied_by(self, task: Task) -> bool:
-    ...         return self.date < task.created_at
-    ...
-    ... @dataclass
-    ... class TaskObsolete(Criteria[Task]):
-    ...     days_to_work: int
-    ...
-    ...     def is_satisfied_by(self, task: Task) -> bool:
-    ...         days_spent = task.finished_at - task.created_at
-    ...         return days_spent.days > self.days_to_work
-    ...
-    ... some_task = Task(
-    ...     created_at=datetime(2024, 1, 1),
-    ...     finished_at=datetime(2024, 1, 10),
-    ... )
-    ... old_and_obsolete = (
-    ...     TaskOlderThan(datetime(2024, 1, 31)) & TaskObsolete(3)
-    ... )
-    ... old_and_obsolete.is_satisfied_by(some_task)
-    True
+    Критерий можно вызвать как функцию (`criteria(candidate)`), что удобно
+    для `filter`. Если критерий объявлен атрибутом класса, то на экземпляре
+    он превращается в `BoundFormedCriteria` (`entity.rule()`,
+    `entity.rule.is_satisfied()`, `entity.rule.must_be_satisfied()`),
+    а на самом классе остаётся самим критерием.
 
-    >>> old_and_obsolete(some_task)
-    True
+    Составные критерии (`And`, `Or`, `Xor`, `Invert`) сравниваются
+    и хешируются структурно, порядок операндов важен. Сам `Criteria`
+    сравнивается по идентичности, если подкласс не задаёт `__eq__`
+    (например, через `@dataclass`).
 
-    >>> list(filter(old_and_obsolete, [Task(1), Task(2), Task(3)]))
-    Task(1)
+    Example:
+        >>> from dataclasses import dataclass
+        >>> @dataclass
+        ... class Task:
+        ...     number: int
+        ...     days: int
+        >>> @dataclass
+        ... class Longer(Criteria[Task]):
+        ...     limit: int
+        ...     def is_satisfied_by(self, task: Task) -> bool:
+        ...         return task.days > self.limit
+        >>> @dataclass
+        ... class Numbered(Criteria[Task]):
+        ...     number: int
+        ...     def is_satisfied_by(self, task: Task) -> bool:
+        ...         return task.number == self.number
+        >>> tasks = [Task(1, 5), Task(2, 1), Task(3, 9)]
+        >>> rule = Longer(3) & ~Numbered(1)
+        >>> rule
+        And(Longer(limit=3), Invert(Numbered(number=1)))
+        >>> rule.is_satisfied_by(tasks[2])
+        True
+        >>> rule(tasks[0])
+        False
+        >>> list(filter(rule, tasks))
+        [Task(number=3, days=9)]
+        >>> rule.must_be_satisfied_by(tasks[1])  # doctest: +IGNORE_EXCEPTION_DETAIL
+        Traceback (most recent call last):
+            ...
+        CriteriaNotSatisfied: Criteria not satisfied: Longer(limit=3)
+        >>> rule.remainder_unsatisfied_by(tasks[1])
+        Longer(limit=3)
+
+        Критерий как атрибут класса:
+
+        >>> @dataclass
+        ... class Job:
+        ...     days: int
+        ...     is_long = Longer(3)
+        >>> Job(5).is_long()
+        True
+        >>> Job.is_long
+        Longer(limit=3)
+
     """
 
     def __and__(
         self,
         other: "Criteria[Object]",
     ) -> "Criteria[Object]":
+        """Возвращает `And(self, other)`."""
         return And(self, other)
 
     def __or__(
         self,
         other: "Criteria[Object]",
     ) -> "Criteria[Object]":
+        """Возвращает `Or(self, other)`."""
         return Or(self, other)
 
     def __xor__(
         self,
         other: "Criteria[Object]",
     ) -> "Criteria[Object]":
+        """Возвращает `Xor(self, other)`."""
         return Xor(self, other)
 
     def __invert__(
         self: "Criteria[Object]",
     ) -> "Criteria[Object]":
+        """Возвращает `Invert(self)`."""
         return Invert(self)
 
     def is_satisfied_by(self, candidate: Object) -> bool:
+        """Проверяет, удовлетворяет ли кандидат критерию.
+
+        Подклассы должны переопределить метод.
+
+        Args:
+            candidate: Проверяемый объект.
+
+        Returns:
+            True, если кандидат удовлетворяет критерию.
+
+        Raises:
+            NotImplementedError: Метод не переопределён.
+
+        """
         raise NotImplementedError
 
     def __call__(self, candidate: Object) -> bool:
+        """Алиас `is_satisfied_by`, удобен для `filter`."""
         return self.is_satisfied_by(candidate)
 
     def must_be_satisfied_by(self, candidate: Object) -> None:
+        """Проверяет кандидата и бросает исключение, если критерий не выполнен.
+
+        Args:
+            candidate: Проверяемый объект.
+
+        Raises:
+            CriteriaNotSatisfied: Критерий не выполнен; в `criteria` лежит
+                невыполненная часть (`remainder_unsatisfied_by`).
+
+        """
         remainder = self.remainder_unsatisfied_by(candidate)
         if remainder is not None:
             raise CriteriaNotSatisfied(remainder)
@@ -106,6 +159,16 @@ class Criteria(Generic[Object]):
     def remainder_unsatisfied_by(
         self, candidate: Object
     ) -> Optional["Criteria[Object]"]:
+        """Возвращает невыполненную часть критерия.
+
+        Args:
+            candidate: Проверяемый объект.
+
+        Returns:
+            None, если кандидат удовлетворяет критерию, иначе та часть
+            критерия, которая не выполнена (по умолчанию - сам критерий).
+
+        """
         if self.is_satisfied_by(candidate):
             return None
         return self
@@ -132,12 +195,18 @@ class Criteria(Generic[Object]):
         "BoundFormedCriteria[Object]",
         "Criteria[Object]",
     ]:
+        """Дескриптор: на экземпляре даёт `BoundFormedCriteria`, на классе - себя."""
         if instance is not None:
             return BoundFormedCriteria(instance, self)
         return self
 
 
 class BoundFormedCriteria(Generic[Object]):
+    """Готовый критерий, привязанный к экземпляру, которому он принадлежит.
+
+    Возникает при обращении к критерию-атрибуту класса через экземпляр.
+    """
+
     instance: Object
     _criteria: object
 
@@ -146,73 +215,111 @@ class BoundFormedCriteria(Generic[Object]):
         instance: Object,
         criteria: Criteria[Object],
     ) -> None:
+        """Привязывает критерий к экземпляру."""
         self.instance = instance
         self._criteria = criteria
 
     @property
     def criteria(self) -> CriteriaNode[Object]:
+        """Привязанный критерий."""
         return cast("CriteriaNode[Object]", self._criteria)
 
     def __call__(self) -> bool:
+        """Алиас `is_satisfied`."""
         return self.is_satisfied()
 
     def is_satisfied(self) -> bool:
+        """Проверяет экземпляр критерием."""
         return self.criteria.is_satisfied_by(self.instance)
 
     def must_be_satisfied(self) -> None:
+        """Проверяет экземпляр критерием.
+
+        Raises:
+            CriteriaNotSatisfied: Критерий не выполнен.
+
+        """
         self.criteria.must_be_satisfied_by(self.instance)
 
 
 class CompositeCriteria(Criteria[Object]):
-    """
-    Интерфейс критерия с неограниченным количеством вложенных критериев.
+    """Критерий с неограниченным количеством вложенных критериев.
 
-    Используется внутри библиотеки.
+    Вложенные критерии лежат в списке `nested`; его читает обход дерева,
+    например traverse из classic-db-tools. Равенство и хеш структурные,
+    порядок вложенных критериев важен; хеш считается как у tuple, поэтому
+    при нехешируемом вложенном критерии (например, из `@criteria`)
+    бросается `TypeError`.
     """
 
     nested: list[Criteria[Object]]
 
     def __init__(self, *criteria: Criteria[Object]) -> None:
+        """Создаёт критерий из вложенных критериев."""
         self.nested = list(criteria)
 
     def __repr__(self) -> str:
+        """Возвращает вид `And(<вложенный>, ...)`."""
         nested = ", ".join(repr(criteria) for criteria in self.nested)
         return f"{type(self).__name__}({nested})"
 
     def __eq__(self, other: object) -> bool:
+        """Структурное равенство: тот же тип и равные вложенные по порядку."""
         if type(self) is not type(other):
             return NotImplemented
         return self.nested == cast("CompositeCriteria[Object]", other).nested
 
     def __hash__(self) -> int:
+        """Хеш по типу и вложенным критериям."""
         return hash((type(self), tuple(self.nested)))
 
     def is_satisfied_by(self, candidate: Object) -> bool:
+        """Должен быть переопределён в подклассе."""
         raise NotImplementedError
 
 
 class And(CompositeCriteria[Object]):
-    """
-    Критерий, проверяющий, что все вложенные критерии удовлетворяются.
+    """Критерий, проверяющий, что все вложенные критерии удовлетворяются.
 
-    Нужен для обработки логической операции И между несколькими критериями.
-    В норме используется только под капотом и вручную не инстанцируется.
+    Результат оператора `&`. При `&` с другим `And` вложенные критерии
+    сплющиваются в один `And`. Обычно вручную не создаётся.
+
+    Example:
+        >>> a, b, c = ReturnsTrue(), ReturnsFalse(), ReturnsTrue()
+        >>> (a & b) & c
+        And(ReturnsTrue(), ReturnsFalse(), ReturnsTrue())
+        >>> (a & b).remainder_unsatisfied_by(None)
+        ReturnsFalse()
+        >>> (b & b & a).remainder_unsatisfied_by(None)
+        And(ReturnsFalse(), ReturnsFalse())
+
     """
 
     def __and__(self, other: Criteria[Object]) -> Criteria[Object]:
+        """Возвращает `And` с вложенными критериями обоих операндов."""
         other_nested: list[Criteria[Object]] = (
             other.nested if isinstance(other, And) else [other]
         )
         return And(*self.nested, *other_nested)
 
     def is_satisfied_by(self, candidate: Object) -> bool:
+        """Истина, если выполнены все вложенные критерии."""
         return all(criteria.is_satisfied_by(candidate) for criteria in self.nested)
 
     def remainder_unsatisfied_by(
         self,
         candidate: Object,
     ) -> Criteria[Object] | None:
+        """Возвращает только невыполненные вложенные критерии.
 
+        Args:
+            candidate: Проверяемый объект.
+
+        Returns:
+            None, если выполнены все; единственный невыполненный критерий;
+            иначе `And` из невыполненных.
+
+        """
         non_satisfied = [
             criteria
             for criteria in self.nested
@@ -228,69 +335,88 @@ class And(CompositeCriteria[Object]):
 
 
 class Or(CompositeCriteria[Object]):
-    """
-    Критерий, проверяющий, что хотя бы один вложенный критерий удовлетворяются.
+    """Критерий, проверяющий, что выполнен хотя бы один вложенный критерий.
 
-    Нужен для обработки логической операции ИЛИ между несколькими критериями.
-    В норме используется только под капотом и вручную не инстанцируется.
+    Результат оператора `|`. При `|` с другим `Or` вложенные критерии
+    сплющиваются в один `Or`. Если не выполнены все ветки,
+    `remainder_unsatisfied_by` возвращает весь `Or`. Обычно вручную
+    не создаётся.
+
+    Example:
+        >>> (ReturnsFalse() | ReturnsFalse()) | ReturnsTrue()
+        Or(ReturnsFalse(), ReturnsFalse(), ReturnsTrue())
+        >>> (ReturnsFalse() | ReturnsFalse()).remainder_unsatisfied_by(None)
+        Or(ReturnsFalse(), ReturnsFalse())
+
     """
 
     def __or__(self, other: Criteria[Object]) -> Criteria[Object]:
+        """Возвращает `Or` с вложенными критериями обоих операндов."""
         other_nested: list[Criteria[Object]] = (
             other.nested if isinstance(other, Or) else [other]
         )
         return Or(*self.nested, *other_nested)
 
     def is_satisfied_by(self, candidate: Object) -> bool:
+        """Истина, если выполнен хотя бы один вложенный критерий."""
         return any(criteria.is_satisfied_by(candidate) for criteria in self.nested)
 
 
 class UnaryCriteria(Criteria[Object]):
-    """
-    Интерфейс критерия с одним вложенным критерием.
+    """Критерий с одним вложенным критерием, доступным как `nested`.
 
-    Используется внутри библиотеки.
+    Равенство и хеш структурные.
     """
 
     _nested: object
 
     def __init__(self, criteria: Criteria[Object]) -> None:
+        """Создаёт критерий над вложенным критерием."""
         self._nested = criteria
 
     def __repr__(self) -> str:
+        """Возвращает вид `Invert(<вложенный>)`."""
         return f"{type(self).__name__}({self._nested!r})"
 
     def __eq__(self, other: object) -> bool:
+        """Структурное равенство: тот же тип и равный вложенный критерий."""
         if type(self) is not type(other):
             return NotImplemented
         return self._nested == cast("UnaryCriteria[Object]", other)._nested
 
     def __hash__(self) -> int:
+        """Хеш по типу и вложенному критерию."""
         return hash((type(self), self._nested))
 
     @property
     def nested(self) -> CriteriaNode[Object]:
+        """Вложенный критерий."""
         return cast("CriteriaNode[Object]", self._nested)
 
 
 class Invert(UnaryCriteria[Object]):
-    """
-    Критерий, проверяющий, что вложенный критерии не удовлетворяется.
+    """Критерий, проверяющий, что вложенный критерий не выполняется.
 
-    Нужен для обработки логической операции НЕ над вложенным критериями.
-    В норме используется только под капотом и вручную не инстанцируется.
+    Результат оператора `~`. Обычно вручную не создаётся.
+
+    Example:
+        >>> ~ReturnsTrue()
+        Invert(ReturnsTrue())
+        >>> (~ReturnsTrue()).is_satisfied_by(None)
+        False
+
     """
 
     def is_satisfied_by(self, candidate: Object) -> bool:
+        """Истина, если вложенный критерий не выполнен."""
         return not self.nested.is_satisfied_by(candidate)
 
 
 class BinaryCriteria(Criteria[Object]):
-    """
-    Интерфейс критерия с двумя вложенными критериями.
-    Нужен для реализации операций, в которых порядок элементов имеет значение.
+    """Критерий с двумя вложенными критериями `left` и `right`.
 
-    Используется внутри библиотеки.
+    Нужен для операций, где важен порядок операндов. Равенство и хеш
+    структурные: `Xor(a, b) != Xor(b, a)`.
     """
 
     _left: object
@@ -301,43 +427,55 @@ class BinaryCriteria(Criteria[Object]):
         left: Criteria[Object],
         right: Criteria[Object],
     ) -> None:
+        """Создаёт критерий из левого и правого операндов."""
         self._left = left
         self._right = right
 
     def __repr__(self) -> str:
+        """Возвращает вид `Xor(<левый>, <правый>)`."""
         return f"{type(self).__name__}({self._left!r}, {self._right!r})"
 
     def __eq__(self, other: object) -> bool:
+        """Структурное равенство: тот же тип и равные операнды по порядку."""
         if type(self) is not type(other):
             return NotImplemented
         other_ = cast("BinaryCriteria[Object]", other)
         return self._left == other_._left and self._right == other_._right
 
     def __hash__(self) -> int:
+        """Хеш по типу и операндам."""
         return hash((type(self), self._left, self._right))
 
     @property
     def left(self) -> CriteriaNode[Object]:
+        """Левый операнд."""
         return cast("CriteriaNode[Object]", self._left)
 
     @property
     def right(self) -> CriteriaNode[Object]:
+        """Правый операнд."""
         return cast("CriteriaNode[Object]", self._right)
 
     def is_satisfied_by(self, candidate: Object) -> bool:
+        """Должен быть переопределён в подклассе."""
         raise NotImplementedError
 
 
 class Xor(BinaryCriteria[Object]):
-    """
-    Критерий, проверяющий, что только один вложенный критерий удовлетворяется.
+    """Критерий, проверяющий, что выполнен ровно один из двух критериев.
 
-    Нужен для обработки логической операции ИСКЛЮЧАЮЩЕЕ ИЛИ
-    над вложенными критериями. В норме используется
-    только под капотом и вручную не инстанцируется.
+    Результат оператора `^`. Обычно вручную не создаётся.
+
+    Example:
+        >>> (ReturnsTrue() ^ ReturnsFalse()).is_satisfied_by(None)
+        True
+        >>> (ReturnsTrue() ^ ReturnsTrue()).is_satisfied_by(None)
+        False
+
     """
 
     def is_satisfied_by(self, candidate: Object) -> bool:
+        """Истина, если выполнен ровно один из операндов."""
         return self.left.is_satisfied_by(candidate) ^ self.right.is_satisfied_by(
             candidate
         )
@@ -347,22 +485,46 @@ class _ConstantCriteria(Criteria[Object]):
     """Общая часть критериев-констант: repr, равенство и хеш по точному типу."""
 
     def __repr__(self) -> str:
+        """Возвращает вид `ReturnsTrue()`."""
         return f"{type(self).__name__}()"
 
     def __eq__(self, other: object) -> bool:
+        """Равны все экземпляры одного и того же типа."""
         if type(self) is not type(other):
             return NotImplemented
         return True
 
     def __hash__(self) -> int:
+        """Хеш по типу."""
         return hash(type(self))
 
 
 class ReturnsTrue(_ConstantCriteria[Object]):
+    """Критерий, которому удовлетворяет любой объект.
+
+    Нейтральный элемент для `&`; удобен как начальное значение при сборке
+    фильтра.
+
+    Example:
+        >>> import functools, operator
+        >>> parts = [ReturnsTrue(), ReturnsFalse()]
+        >>> all_of = functools.reduce(operator.and_, parts, ReturnsTrue())
+        >>> all_of.is_satisfied_by(1)
+        False
+
+    """
+
     def is_satisfied_by(self, candidate: Object) -> bool:  # noqa: ARG002
+        """Всегда True."""
         return True
 
 
 class ReturnsFalse(_ConstantCriteria[Object]):
+    """Критерий, которому не удовлетворяет ни один объект.
+
+    Нейтральный элемент для `|`.
+    """
+
     def is_satisfied_by(self, candidate: Object) -> bool:  # noqa: ARG002
+        """Всегда False."""
         return False

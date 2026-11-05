@@ -1,3 +1,5 @@
+"""Декоратор `@criteria` и вспомогательные классы для критериев-функций."""
+
 import importlib
 import inspect
 import pickle
@@ -26,11 +28,18 @@ _RESERVED_NAMES = ("predicate", "_positional", "_keyword")
 
 
 class PredicateCriteria(Criteria[Object], Generic[Object, Params]):
+    """Базовый класс критериев, порождаемых `@criteria` из функции.
+
+    Класс-наследник создаётся как dataclass: параметры функции после
+    кандидата становятся полями, сама функция лежит в `predicate`.
+    """
+
     predicate: Predicate[Object, Params]
     _positional: ClassVar[tuple[str, ...]]
     _keyword: ClassVar[tuple[str, ...]]
 
     def is_satisfied_by(self, candidate: Object) -> bool:
+        """Вызывает функцию-предикат с кандидатом и параметрами критерия."""
         predicate = cast("Any", self.predicate)
         return predicate(
             candidate,
@@ -39,9 +48,11 @@ class PredicateCriteria(Criteria[Object], Generic[Object, Params]):
         )
 
     def __str__(self) -> str:
+        """Возвращает имя функции-предиката."""
         return self.predicate.__name__
 
     def __reduce__(self) -> tuple[Any, ...]:
+        """Поддержка pickle: критерий восстанавливается по пути к функции."""
         module = self.predicate.__module__
         qualname = self.predicate.__qualname__
         descriptor = _find_descriptor(module, qualname)
@@ -63,6 +74,11 @@ class PredicateCriteria(Criteria[Object], Generic[Object, Params]):
 
 
 class BoundUnformedCriteria(Generic[Object, Params]):
+    """Критерий-функция, привязанный к экземпляру, но ещё без параметров.
+
+    Вызов с параметрами сразу проверяет экземпляр и возвращает bool.
+    """
+
     instance: Object
     criteria_cls: type[PredicateCriteria[Object, Params]]
 
@@ -71,13 +87,16 @@ class BoundUnformedCriteria(Generic[Object, Params]):
         instance: Object,
         criteria_cls: type[PredicateCriteria[Object, Params]],
     ) -> None:
+        """Привязывает класс критерия к экземпляру."""
         self.instance = instance
         self.criteria_cls = criteria_cls
 
     def __call__(self, *args: Params.args, **kwargs: Params.kwargs) -> bool:
+        """Алиас `is_satisfied`."""
         return self.is_satisfied(*args, **kwargs)
 
     def is_satisfied(self, *args: Params.args, **kwargs: Params.kwargs) -> bool:
+        """Создаёт критерий из параметров и проверяет им экземпляр."""
         return self.criteria_cls(
             *args,
             **kwargs,
@@ -88,6 +107,12 @@ class BoundUnformedCriteria(Generic[Object, Params]):
         *args: Params.args,
         **kwargs: Params.kwargs,
     ) -> None:
+        """Создаёт критерий из параметров и проверяет им экземпляр.
+
+        Raises:
+            CriteriaNotSatisfied: Критерий не выполнен.
+
+        """
         self.criteria_cls(
             *args,
             **kwargs,
@@ -95,12 +120,19 @@ class BoundUnformedCriteria(Generic[Object, Params]):
 
 
 class CriteriaDescriptor(Generic[Object, Params]):
+    """Результат `@criteria`: создаёт критерий, а на экземпляре проверяет сразу.
+
+    На классе или модуле вызов возвращает критерий (отложенная проверка),
+    на экземпляре - `BoundUnformedCriteria`.
+    """
+
     criteria_cls: type[PredicateCriteria[Object, Params]]
 
     def __init__(
         self,
         criteria_cls: type[PredicateCriteria[Object, Params]],
     ) -> None:
+        """Запоминает класс критерия."""
         self.criteria_cls = criteria_cls
 
     def __call__(
@@ -108,6 +140,7 @@ class CriteriaDescriptor(Generic[Object, Params]):
         *args: Params.args,
         **kwargs: Params.kwargs,
     ) -> Criteria[Object]:
+        """Создаёт критерий с заданными параметрами."""
         return self.criteria_cls(*args, **kwargs)
 
     @overload
@@ -132,6 +165,7 @@ class CriteriaDescriptor(Generic[Object, Params]):
         BoundUnformedCriteria[Object, Params],
         "CriteriaDescriptor[Object, Params]",
     ]:
+        """Дескриптор: на экземпляре даёт `BoundUnformedCriteria`, на классе - себя."""
         if instance is not None:
             return BoundUnformedCriteria(instance, self.criteria_cls)
         return self
@@ -161,6 +195,7 @@ def _restore_predicate_criteria(
     args: tuple[Any, ...],
     kwargs: dict[str, Any],
 ) -> PredicateCriteria[Any, Any]:
+    """Восстанавливает критерий при unpickle."""
     descriptor = _find_descriptor(module, qualname)
     if descriptor is None:
         raise pickle.UnpicklingError(f"Criteria {module}.{qualname} not found")
@@ -170,6 +205,21 @@ def _restore_predicate_criteria(
 def make_predicate_criteria(
     fn: Predicate[Object, Params],
 ) -> type[PredicateCriteria[Object, Params]]:
+    """Строит класс-критерий (dataclass) из функции-предиката.
+
+    Параметры функции после первого становятся полями dataclass.
+
+    Args:
+        fn: Функция `fn(candidate, *params)`.
+
+    Returns:
+        Класс-наследник `PredicateCriteria` с именем функции.
+
+    Raises:
+        TypeError: Есть `*args`/`**kwargs` или имя параметра
+            `predicate`, `_positional`, `_keyword`.
+
+    """
     annotations: list[tuple[Any, ...]] = []
     positional: list[str] = []
     keyword: list[str] = []
@@ -227,42 +277,62 @@ def make_predicate_criteria(
 def criteria(
     fn: Predicate[Object, Params],
 ) -> CriteriaDescriptor[Object, Params]:
-    """
-    Декоратор для удобного описания правила через функции:
+    """Превращает функцию-предикат в критерий.
 
-    Пример:
-    >>> from dataclasses import dataclass
-    ... from classic.criteria import criteria
-    ...
-    ... @dataclass
-    ... class Book:
-    ...     author: str
-    ...
-    ... @criteria
-    ... def can_edit_book(book, user):
-    ...     return book.author == user
-    ...
-    ... some_book = Book('Ivan')
-    ... can_edit_book('Ivan').is_satisfied_by(some_book)
-    True
+    Функция или метод `fn(candidate, *params)` становится классом-критерием
+    (dataclass): имя класса совпадает с именем функции, параметры после
+    кандидата - поля. Поддерживаются keyword-only параметры и значения
+    по умолчанию. Параметры `*args`/`**kwargs` и имена `predicate`,
+    `_positional`, `_keyword` не допускаются.
 
-    Также можно оборачивать методы в классе:
-    >>> from dataclasses import dataclass
-    ... from classic.criteria import criteria
-    ...
-    ... @dataclass
-    ... class Book:
-    ...     author: str
-    ...
-    ...     @criteria
-    ...     def can_edit(self, user):
-    ...         return self.author == user
-    ...
-    ... some_book = Book('Ivan')
-    ... Book.can_edit('Ivan').is_satisfied_by(some_book)
-    True
-    >>> some_book.can_edit('Ivan')
-    True
+    На классе или модуле вызов создаёт критерий (отложенная проверка,
+    его можно комбинировать и передавать в запросы), на экземпляре -
+    сразу проверяет и возвращает bool; доступны также `.is_satisfied(...)`
+    и `.must_be_satisfied(...)`. Pickle работает для функций уровня модуля
+    и методов классов уровня модуля. Критерии из `@criteria` не хешируются
+    (dataclass с `eq=True`).
+
+    Args:
+        fn: Функция `fn(candidate, *params) -> bool`.
+
+    Returns:
+        Дескриптор, создающий критерий.
+
+    Raises:
+        TypeError: `fn` не вызываема, либо у неё недопустимые параметры.
+
+    Example:
+        >>> from dataclasses import dataclass
+        >>> @criteria
+        ... def older_than(age, limit):
+        ...     return age > limit
+        >>> older_than(18)
+        older_than(limit=18)
+        >>> older_than(18).is_satisfied_by(20)
+        True
+
+        Метод класса:
+
+        >>> @dataclass
+        ... class Task:
+        ...     days: int
+        ...     @criteria
+        ...     def obsolete(self, limit, *, strict=False):
+        ...         return self.days >= limit if not strict else self.days > limit
+        >>> Task.obsolete(3)
+        obsolete(limit=3, strict=False)
+        >>> Task.obsolete(3).is_satisfied_by(Task(3))
+        True
+        >>> task = Task(3)
+        >>> task.obsolete(3)
+        True
+        >>> task.obsolete(3, strict=True)
+        False
+        >>> task.obsolete.must_be_satisfied(5)  # doctest: +IGNORE_EXCEPTION_DETAIL
+        Traceback (most recent call last):
+            ...
+        CriteriaNotSatisfied: Criteria not satisfied: obsolete(limit=5, ...)
+
     """
     if not callable(fn):
         raise TypeError(f"criteria expects a callable, got {fn!r}")
