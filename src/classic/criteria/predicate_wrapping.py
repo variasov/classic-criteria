@@ -30,8 +30,9 @@ _RESERVED_NAMES = ("predicate", "_positional", "_keyword")
 class PredicateCriteria(Criteria[Object], Generic[Object, Params]):
     """Базовый класс критериев, порождаемых `@criteria` из функции.
 
-    Класс-наследник создаётся как dataclass: параметры функции после
+    Класс-наследник создаётся как frozen dataclass: параметры функции после
     кандидата становятся полями, сама функция лежит в `predicate`.
+    Критерий неизменяем и хешируем, если хешируемы значения полей.
     """
 
     predicate: Predicate[Object, Params]
@@ -261,6 +262,7 @@ def make_predicate_criteria(
         fn.__name__,
         annotations,
         bases=(PredicateCriteria,),
+        frozen=True,
         namespace={
             "predicate": staticmethod(fn),
             "_positional": tuple(positional),
@@ -289,8 +291,9 @@ def criteria(
     его можно комбинировать и передавать в запросы), на экземпляре -
     сразу проверяет и возвращает bool; доступны также `.is_satisfied(...)`
     и `.must_be_satisfied(...)`. Pickle работает для функций уровня модуля
-    и методов классов уровня модуля. Критерии из `@criteria` не хешируются
-    (dataclass с `eq=True`).
+    и методов классов уровня модуля. Критерии из `@criteria` - frozen dataclass,
+    они хешируемы, если хешируемы значения полей (список в поле — и хеш
+    уже TypeError).
 
     Args:
         fn: Функция `fn(candidate, *params) -> bool`.

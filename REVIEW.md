@@ -79,7 +79,10 @@
 - Ветка `v1`, следующая версия 1.0.0: меняются поведение и API.
 - Extra `db-tools` удалён: связка ставится через `classic-db-tools[criteria]`.
 - `CriteriaNotSatisfied` наследуется от `Exception`, атрибут `criteria` содержит невыполненную часть (`remainder_unsatisfied_by`), кандидат не хранится.
-- Составные критерии: структурные `__eq__` и `__hash__`, хеш как у tuple (`TypeError` при нехешируемом вложенном критерии).
+- Составные критерии: структурные `__eq__` и `__hash__`; `nested` — кортеж (иммутабельность),
+  для `And`/`Or` сравнение как мультимножество (порядок не важен), для `Xor`/`Invert` — по порядку;
+  хеш как у `frozenset` от `Counter(nested).items()` (`TypeError` при нехешируемом вложенном).
+  Критерии из `@criteria` — frozen dataclass: хешируемы, если хешируемы значения полей.
 - Экспортируются `ReturnsTrue`, `ReturnsFalse`, `CompositeCriteria`, `UnaryCriteria`, `BinaryCriteria`.
 - Имена классов, `nested`, `left`/`right` и поля критериев из `@criteria` не менялись: совместимость с `traverse` из classic-db-tools.
 - Стиль кавычек: двойные, как в эталоне. `N818` и `PLC0105` в ignore. Сообщения исключений на английском, докстринги и комментарии на русском.

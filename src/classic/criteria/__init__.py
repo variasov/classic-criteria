@@ -4,7 +4,9 @@
 (`is_satisfied_by`, `must_be_satisfied_by`), скомбинировать с другими
 операторами `&`, `|`, `^`, `~` и оттранслировать в запрос, например в SQL
 через classic-db-tools (макрос ищется по имени класса критерия, для `@criteria`
-- по имени функции).
+- по имени функции). Критерии immutable: составные хранят операнды в кортеже,
+критерии из `@criteria` — frozen dataclass; для `And` и `Or` порядок операндов
+не влияет на равенство и хеш.
 
 Example:
     >>> from classic.criteria import criteria

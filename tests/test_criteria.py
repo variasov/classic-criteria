@@ -121,10 +121,10 @@ def test_and_does_not_mutate_operands(entity: SomeEntity):
 
     b = a & third
 
-    assert a.nested == [first, second]
+    assert a.nested == (first, second)
     assert b is not a
     assert isinstance(b, And)
-    assert b.nested == [first, second, third]
+    assert b.nested == (first, second, third)
     assert a(entity) is True
     assert b(entity) is False
 
@@ -138,10 +138,10 @@ def test_or_does_not_mutate_operands(entity: SomeEntity):
 
     b = a | third
 
-    assert a.nested == [first, second]
+    assert a.nested == (first, second)
     assert b is not a
     assert isinstance(b, Or)
-    assert b.nested == [first, second, third]
+    assert b.nested == (first, second, third)
     assert a(entity) is False
     assert b(entity) is True
 
@@ -154,9 +154,9 @@ def test_and_flattens_right_operand_without_mutation():
     result = left & right
 
     assert isinstance(result, And)
-    assert result.nested == [c1, c2, c3, c4]
-    assert left.nested == [c1, c2]
-    assert right.nested == [c3, c4]
+    assert result.nested == (c1, c2, c3, c4)
+    assert left.nested == (c1, c2)
+    assert right.nested == (c3, c4)
 
 
 def test_or_flattens_right_operand_without_mutation():
@@ -167,15 +167,15 @@ def test_or_flattens_right_operand_without_mutation():
     result = left | right
 
     assert isinstance(result, Or)
-    assert result.nested == [c1, c2, c3, c4]
-    assert left.nested == [c1, c2]
-    assert right.nested == [c3, c4]
+    assert result.nested == (c1, c2, c3, c4)
+    assert left.nested == (c1, c2)
+    assert right.nested == (c3, c4)
 
 
 def test_class_attribute_criteria_is_not_changed(entity: SomeEntity):
     rule = SomeEntity.rule
     assert isinstance(rule, And)
-    nested_before = list(rule.nested)
+    nested_before = rule.nested
 
     extended = SomeEntity.rule & CriteriaWithParam(2)
 
@@ -330,7 +330,7 @@ def test_not_satisfied_contains_only_unsatisfied_part(entity: SomeEntity):
     with pytest.raises(CriteriaNotSatisfied) as info:
         (a & b & c).must_be_satisfied_by(entity)
     assert isinstance(info.value.criteria, And)
-    assert info.value.criteria.nested == [b, c]  # pyright: ignore[reportUnknownMemberType]
+    assert info.value.criteria.nested == (b, c)  # pyright: ignore[reportUnknownMemberType]
 
 
 def test_not_satisfied_bound(entity: SomeEntity):
@@ -425,11 +425,27 @@ def test_eq_composite():
 
 
 def test_not_eq_composite():
-    assert with_param(1) & with_param(2) != with_param(2) & with_param(1)
-    assert with_param(1) & with_param(2) != with_param(1) | with_param(2)
     assert with_param(1) & with_param(2) != with_param(1) & with_param(3)
+    assert with_param(1) & with_param(2) != with_param(1) | with_param(2)
     assert with_param(1) & with_param(2) != with_param(1)
     assert And(with_param(1)) != Or(with_param(1))
+
+
+def test_eq_composite_order_independent():
+    # порядок операндов не влияет на равенство And и Or
+    assert with_param(1) & with_param(2) == with_param(2) & with_param(1)
+    assert with_param(1) | with_param(2) == with_param(2) | with_param(1)
+    # с учётом кратности
+    a, b = with_param(1), with_param(2)
+    assert And(a, a, b) == And(b, a, a)
+    assert And(a, a, b) != And(a, b, b)
+    assert And(a, b) != And(a, a, b)
+    # Xor и Invert остаются порядко-зависимыми
+    assert (with_param(1) ^ with_param(2)) != (with_param(2) ^ with_param(1))
+    assert ~with_param(1) != ~with_param(2)
+    # нехешируемые вложенные тоже сравниваются без порядка
+    unhashable = CriteriaWithParam(1)
+    assert And(unhashable, b) == And(b, unhashable)
 
 
 def test_eq_unary_and_binary():
@@ -480,13 +496,23 @@ def test_hash_of_user_criteria():
     assert len({a & b, a & b, a | b}) == 2
 
 
-def test_hash_with_criteria_decorator_is_unhashable():
+def test_hash_with_criteria_decorator():
+    # frozen dataclass: хешируем, если хешируемы значения полей
+    assert hash(with_param(1) & with_param(2)) == hash(with_param(2) & with_param(1))
+    assert hash(~with_param(1)) == hash(~with_param(1))
+    assert hash(with_param(1) ^ with_param(2)) == hash(with_param(1) ^ with_param(2))
+    assert len({with_param(1) & with_param(2), with_param(2) & with_param(1)}) == 1
+
+
+def test_hash_unhashable_field_raises():
+    @criteria
+    def with_list(_entity: SomeEntity, items: list[int]) -> bool:
+        return bool(items)  # pragma: no cover
+
     with pytest.raises(TypeError):
-        hash(with_param(1) & with_param(2))
+        hash(with_list([1, 2]))
     with pytest.raises(TypeError):
-        hash(~with_param(1))
-    with pytest.raises(TypeError):
-        hash(with_param(1) ^ with_param(2))
+        hash(with_list([1, 2]) & with_param(1))
 
 
 def test_mock_assert_called_with_composite_criteria():

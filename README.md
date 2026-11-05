@@ -146,18 +146,43 @@ except CriteriaNotSatisfied as error:
 
 Составные критерии сравниваются по структуре и выводятся в `repr`
 в виде вызова конструкторов. Это удобно в логах и в тестах,
-например в `mock.assert_called_once_with(...)`:
+например в `mock.assert_called_once_with(...)`. Для `And` и `Or`
+порядок операндов не важен, для `Xor` и `Invert` — важен:
 
 ```python
 Open() & Obsolete(3) == Open() & Obsolete(3)
 # True
 
-Open() & Obsolete(3) == Obsolete(3) & Open()  # порядок важен
-# False
+Open() & Obsolete(3) == Obsolete(3) & Open()  # порядок не важен
+# True
 
 repr(Open() & ~Obsolete(3))
 # 'And(Open(), Invert(Obsolete(days_to_work=3)))'
 ```
+
+Критерии неизменяемы: составные хранят операнды в кортеже `nested`,
+критерии из `@criteria` — frozen dataclass. Поэтому деревья критериев
+можно класть в множества и использовать как ключи словарей, если листья
+тоже хешируемы (`@dataclass(frozen=True)`, критерии из `@criteria`);
+обычный `@dataclass` без `frozen=True` нехешируем:
+
+```python
+@dataclass(frozen=True)
+class Open(Criteria[Task]):
+    ...
+
+
+rules = {Open() & Obsolete(3), Obsolete(3) & Open()}
+len(rules)
+# 1
+
+{Open() & Obsolete(3): "правило"}[Obsolete(3) & Open()]
+# 'правило'
+```
+
+Сравнение без порядка работает и с нехешируемыми листьями —
+для `==` хешируемость не нужна, `TypeError` даёт только `hash()`
+и добавление в `set`/`dict`.
 
 `ReturnsTrue` и `ReturnsFalse` всегда выполнены и всегда не выполнены
 соответственно. Их удобно брать начальным значением при сборке фильтра
