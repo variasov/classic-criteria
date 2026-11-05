@@ -752,6 +752,17 @@ def test_pickle_composite_criteria():
     assert type(restored.nested[0]) is type(with_param(1))
 
 
+def test_pickle_composite_all_protocols():
+    original = And(with_param(1), without_param())
+    for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+        restored = pickle.loads(pickle.dumps(original, protocol=protocol))  # noqa: S301
+        assert restored == original
+        assert hash(restored) == hash(original)
+        # иммутабельность сохраняется после unpickle
+        with pytest.raises(AttributeError, match="immutable"):
+            restored.nested = ()  # type: ignore[misc]
+
+
 def test_not_satisfied_pickle_decorated(entity: SomeEntity):
     crit = with_param(2)
     with pytest.raises(CriteriaNotSatisfied) as info:
