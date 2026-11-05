@@ -72,7 +72,7 @@
 | 10 | Линтеры: ruff ALL, ruff format, pyright strict, vulture | M | сделано (`8b7290c`, `27968f8`) |
 | 11 | CI: `checks.yml`, `publish.yml` с `needs: checks` | S | сделано (`2baaa4a`) |
 | 12 | Каталог `src/`, mutmut, тесты по выжившим мутантам | M | сделано (`f70744a`): 224 мутанта убиты, выживших нет |
-| 13 | Версия 1.0.0 и CHANGELOG | S | |
+| 13 | Версия 1.0.0 и CHANGELOG | S | сделано (`0291ddb`) |
 
 ### Решения (2026-11-04)
 
