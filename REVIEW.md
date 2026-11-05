@@ -73,6 +73,7 @@
 | 11 | CI: `checks.yml`, `publish.yml` с `needs: checks` | S | сделано (`2baaa4a`) |
 | 12 | Каталог `src/`, mutmut, тесты по выжившим мутантам | M | сделано (`f70744a`): 224 мутанта убиты, выживших нет |
 | 13 | Версия 1.0.0 и CHANGELOG | S | сделано (`0291ddb`) |
+| 14 | Frozen-вариант: `nested` — кортеж, `@criteria` — frozen dataclass, `And`/`Or` без порядка; write-once `__setattr__`; подклассы — атрибуты до `super()` | M | сделано (`2875d3b`, `4329fb6`): acceptance 15/15 против 2/15 до, тесты 3.10–3.14, интеграция с dbtools |
 
 ### Решения (2026-11-04)
 

@@ -499,6 +499,77 @@ def test_composite_usable_as_set_and_dict_key():
     assert len({left, with_param(1) | with_param(2)}) == 2
 
 
+def test_empty_composites():
+    empty_and = And[SomeEntity]()
+    empty_or = Or[SomeEntity]()
+
+    assert empty_and == And[SomeEntity]()
+    assert empty_or == Or[SomeEntity]()
+    assert empty_and != empty_or
+    assert empty_and != And[SomeEntity](with_param(1))
+    assert hash(empty_and) == hash(And[SomeEntity]())
+    assert len({empty_and, empty_or, And[SomeEntity]()}) == 2
+    # all([]) и any([])
+    entity = SomeEntity(1)
+    assert empty_and.is_satisfied_by(entity) is True
+    assert empty_or.is_satisfied_by(entity) is False
+
+
+def test_order_independent_deep_in_tree():
+    left = (with_param(1) & with_param(2)) | (with_param(3) & with_param(4))
+    right = (with_param(4) & with_param(3)) | (with_param(2) & with_param(1))
+    assert left == right
+    assert hash(left) == hash(right)
+
+    # And внутри Invert: порядок тоже не важен
+    assert ~(with_param(1) & with_param(2)) == ~(with_param(2) & with_param(1))
+
+
+def test_copy_and_deepcopy_composite():
+    original = And[SomeEntity](with_param(1), with_param(2))
+
+    shallow = copy.copy(original)
+    deep = copy.deepcopy(original)
+
+    assert shallow == original
+    assert deep == original
+    assert shallow is not original
+    assert deep is not original
+    # shallow делит листья, deep копирует
+    assert shallow.nested[0] is original.nested[0]
+    assert deep.nested[0] is not original.nested[0]
+
+    # копия остаётся иммутабельной
+    with pytest.raises(AttributeError, match="immutable"):
+        deep.nested = ()  # type: ignore[misc]
+
+
+def test_subclass_extra_attrs_and_eq_caveat():
+    class WeightedAnd(And[SomeEntity]):
+        def __init__(self, weight: int, *criteria_: Criteria[SomeEntity]) -> None:
+            self.weight = weight  # до super(): nested ещё не установлен
+            super().__init__(*criteria_)
+
+    a = WeightedAnd(5, with_param(1), with_param(2))
+    b = WeightedAnd(5, with_param(2), with_param(1))
+
+    # доп. атрибуты работают, равенство унаследовано (только nested)
+    assert a.weight == 5
+    assert a == b
+
+    # после super() присваивать нельзя
+    class Late(And[SomeEntity]):
+        def __init__(self, *criteria_: Criteria[SomeEntity]) -> None:
+            super().__init__(*criteria_)
+            with pytest.raises(AttributeError, match="immutable"):
+                self.is_satisfied_by = None  # type: ignore[method-assign]
+
+    Late(with_param(1))
+
+    # caveat: weight не участвует в унаследованном __eq__
+    assert WeightedAnd(5, with_param(1)) == WeightedAnd(6, with_param(1))
+
+
 def test_eq_unary_and_binary():
     assert ~with_param(1) == ~with_param(1)
     assert ~with_param(1) != ~with_param(2)
