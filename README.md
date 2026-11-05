@@ -173,6 +173,12 @@ class Open(Criteria[Task]):
     ...
 
 
+@dataclass(frozen=True)
+class Obsolete(Criteria[Task]):
+    days_to_work: int
+    ...
+
+
 rules = {Open() & Obsolete(3), Obsolete(3) & Open()}
 len(rules)
 # 1
