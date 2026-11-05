@@ -66,12 +66,12 @@
 | 4 | `CriteriaNotSatisfied(Exception)` с указанием критерия | S | сделано (`60be3e5`) |
 | 5 | `__repr__` и `__eq__` для составных критериев | S | сделано (`a64addf`), плюс `__hash__` |
 | 6 | Исправить extra `db-tools`, перенести `py.typed` в `classic/criteria/` | S | сделано (`95b6b49`): extra удалён |
-| 7 | Тесты на алгебру, мутацию, параметры | M | частично: регрессионные тесты к шагам 1-6; дополнить по итогам mutmut |
-| 8 | README и docstring: исправить примеры, описать API | S | docstring сделаны (`33ec8de`), README впереди |
+| 7 | Тесты на алгебру, мутацию, параметры | M | сделано: регрессионные тесты к шагам 1-6, тесты по итогам mutmut (`f70744a`) |
+| 8 | README и docstring: исправить примеры, описать API | S | сделано (`33ec8de`, README — `8874fc0`) |
 | 9 | Мелочи из п. 8 замечаний: экспорт, `__init__` с `NotImplementedError`, `assert`, форматирование; pickle критериев из `@criteria`; зарезервированные имена параметров | S | сделано (`fde1ca1`) |
 | 10 | Линтеры: ruff ALL, ruff format, pyright strict, vulture | M | сделано (`8b7290c`, `27968f8`) |
-| 11 | CI: `checks.yml`, `publish.yml` с `needs: checks` | S | |
-| 12 | Каталог `src/`, mutmut, тесты по выжившим мутантам | M | |
+| 11 | CI: `checks.yml`, `publish.yml` с `needs: checks` | S | сделано (`2baaa4a`) |
+| 12 | Каталог `src/`, mutmut, тесты по выжившим мутантам | M | сделано (`f70744a`): 224 мутанта убиты, выживших нет |
 | 13 | Версия 1.0.0 и CHANGELOG | S | |
 
 ### Решения (2026-11-04)
@@ -84,3 +84,5 @@
 - Имена классов, `nested`, `left`/`right` и поля критериев из `@criteria` не менялись: совместимость с `traverse` из classic-db-tools.
 - Стиль кавычек: двойные, как в эталоне. `N818` и `PLC0105` в ignore. Сообщения исключений на английском, докстринги и комментарии на русском.
 - В classic-db-tools после выпуска 1.0 нужно расширить диапазон `classic-criteria~=0.1` в extra `criteria`.
+- mutmut: `# pragma: no mutate` только на `cast(...)` и текстах сообщений об ошибках; лишняя проверка `<locals>` в `_find_descriptor` удалена.
+- README: про трансляцию в SQL — только ссылка на раздел README classic-db-tools.
