@@ -1,12 +1,15 @@
 import copy
+import dataclasses
+import functools
 import pickle
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, TypeVar, cast
 from unittest import mock
 
-import classic.criteria
 import pytest
+
+import classic.criteria
 from classic.criteria import (
     And,
     BinaryCriteria,
@@ -626,3 +629,208 @@ def test_pickle_local_criteria_raises():
 
     with pytest.raises(pickle.PicklingError, match="local"):
         pickle.dumps(local())
+
+
+@pytest.mark.parametrize(
+    ("left", "right", "expected"),
+    [
+        (1, 1, False),
+        (1, 2, True),
+        (2, 1, True),
+        (2, 2, False),
+    ],
+)
+def test_xor_truth_table(entity: SomeEntity, left: int, right: int, expected: object):
+    # entity.value == 1: CriteriaWithParam(1) is True, CriteriaWithParam(2) is False
+    crit = CriteriaWithParam(left) ^ CriteriaWithParam(right)
+    assert isinstance(crit, Xor)
+    assert crit.is_satisfied_by(entity) is expected
+    assert crit(entity) is expected
+    assert crit.is_satisfied_by(SomeEntity(2)) is (left != right)
+
+
+def _and(
+    left: Criteria[SomeEntity],
+    right: Criteria[SomeEntity],
+) -> Criteria[SomeEntity]:
+    return left & right
+
+
+def test_returns_constants_results():
+    assert ReturnsTrue[SomeEntity]().is_satisfied_by(SomeEntity(1)) is True
+    assert ReturnsFalse[SomeEntity]().is_satisfied_by(SomeEntity(1)) is False
+
+
+def test_reduce_with_returns_true_as_initial_value(entity: SomeEntity):
+    empty: list[Criteria[SomeEntity]] = []
+    parts: list[Criteria[SomeEntity]] = [CriteriaWithParam(1), CriteriaWithParam(2)]
+
+    union_empty = functools.reduce(_and, empty, ReturnsTrue[SomeEntity]())
+    assert union_empty.is_satisfied_by(entity) is True
+
+    all_of = functools.reduce(_and, parts, ReturnsTrue[SomeEntity]())
+    assert all_of.is_satisfied_by(entity) is False
+    assert all_of.is_satisfied_by(SomeEntity(2)) is False
+    only_first = functools.reduce(_and, parts[:1], ReturnsTrue[SomeEntity]())
+    assert only_first.is_satisfied_by(entity) is True
+    assert only_first.is_satisfied_by(SomeEntity(2)) is False
+
+
+def test_bound_keyword_only_kwargs_are_passed():
+    entity = KwEntity()
+
+    entity.kw_required.must_be_satisfied(b=2)
+    assert entity.kw_required.is_satisfied(b=2) is True
+    assert entity.kw_required(b=2) is True
+
+    with pytest.raises(CriteriaNotSatisfied):
+        entity.kw_required.must_be_satisfied(b=3)
+    assert entity.kw_required.is_satisfied(b=3) is False
+    assert entity.kw_required(b=3) is False
+
+
+def test_not_satisfied_args_contain_criteria(entity: SomeEntity):
+    crit = CriteriaWithParam(2)
+    with pytest.raises(CriteriaNotSatisfied) as info:
+        crit.must_be_satisfied_by(entity)
+    assert info.value.args == (crit,)
+    assert CriteriaNotSatisfied(crit).args == (crit,)
+
+
+def test_hash_differs_for_different_node_types():
+    a = CriteriaWithParam(1)
+    b = CriteriaWithParam(2)
+
+    class MyInvert(Invert[SomeEntity]):
+        pass
+
+    class MyXor(Xor[SomeEntity]):
+        pass
+
+    class MyAnd(And[SomeEntity]):
+        pass
+
+    assert hash(a & b) != hash(a | b)
+    assert hash(And(a, b)) != hash(MyAnd(a, b))
+    assert hash(~a) != hash(MyInvert(a))
+    assert hash(a ^ b) != hash(MyXor(a, b))
+
+
+def _fields(crit: object) -> dict[str, dataclasses.Field[Any]]:
+    return {f.name: f for f in dataclasses.fields(cast("Any", type(crit)))}
+
+
+def test_make_predicate_criteria_field_types():
+    def typed_and_untyped(
+        _e: SomeEntity,
+        a,  # pyright: ignore[reportMissingParameterType, reportUnknownParameterType]
+        b: int,
+        *,
+        c,  # pyright: ignore[reportMissingParameterType, reportUnknownParameterType]
+        d: str = "x",
+    ) -> bool:
+        return bool((a, b, c, d))  # pyright: ignore[reportUnknownArgumentType]
+
+    fields = _fields(criteria(typed_and_untyped)(1, 2, c=3))  # pyright: ignore[reportUnknownArgumentType]
+
+    assert fields["a"].type is Any
+    assert fields["b"].type is int
+    assert fields["c"].type is Any
+    assert fields["d"].type is str
+
+
+def test_make_predicate_criteria_kw_only_flags():
+    def mixed(_e: SomeEntity, a: int, b: int = 0, *, c: int, d: int = 0) -> bool:
+        return bool(a + b + c + d)
+
+    fields = _fields(criteria(mixed)(1, c=3))
+
+    assert fields["a"].kw_only is False
+    assert fields["b"].kw_only is False
+    assert fields["c"].kw_only is True
+    assert fields["d"].kw_only is True
+
+
+def test_make_predicate_criteria_kw_only_call_forms():
+    def kw(entity: SomeEntity, a: int = 5, *, b: int, c: int = 10) -> bool:
+        return entity.value == a + b + c
+
+    factory = criteria(kw)
+    crit = factory(b=2)
+    assert cast("Any", crit).a == 5
+    assert cast("Any", crit).b == 2
+    assert cast("Any", crit).c == 10
+    assert crit.is_satisfied_by(SomeEntity(17)) is True
+    assert crit.is_satisfied_by(SomeEntity(18)) is False
+
+    assert factory(1, b=2, c=3).is_satisfied_by(SomeEntity(6)) is True
+    assert factory(1, c=3, b=2).is_satisfied_by(SomeEntity(7)) is False
+    with pytest.raises(TypeError):
+        factory(1, 2)  # pyright: ignore[reportCallIssue]
+    with pytest.raises(TypeError):
+        factory()  # pyright: ignore[reportCallIssue]
+    with pytest.raises(TypeError):
+        factory(b=2, a=1, d=0)  # pyright: ignore[reportCallIssue]
+
+
+def test_make_predicate_criteria_passes_kw_only_by_name():
+    received: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
+
+    def spy(_e: SomeEntity, a: int, *, b: int, c: int = 0) -> bool:
+        received.append(((a,), {"b": b, "c": c}))
+        return b > a
+
+    assert spy(SomeEntity(1), 1, b=2) is True  # direct call keeps function intact
+    received.clear()
+
+    crit = criteria(spy)(1, b=2, c=3)
+    assert crit.is_satisfied_by(SomeEntity(1)) is True
+    assert received == [((1,), {"b": 2, "c": 3})]
+    assert criteria(spy)(3, b=2).is_satisfied_by(SomeEntity(1)) is False
+
+
+def test_make_predicate_criteria_defaults():
+    def with_defaults(entity: SomeEntity, a: int = 4, *, b: int = 6) -> bool:
+        return entity.value == a * b
+
+    factory = criteria(with_defaults)
+    crit = factory()
+    fields = _fields(crit)
+
+    assert fields["a"].default == 4
+    assert fields["b"].default == 6
+    assert crit.is_satisfied_by(SomeEntity(24)) is True
+    assert crit.is_satisfied_by(SomeEntity(1)) is False
+    assert factory(2).is_satisfied_by(SomeEntity(12)) is True
+    assert factory(b=2).is_satisfied_by(SomeEntity(8)) is True
+    assert fields["a"].default is not dataclasses.MISSING
+
+
+def test_make_predicate_criteria_required_fields_have_no_default():
+    def required(_e: SomeEntity, a: int, *, b: int) -> bool:  # noqa: ARG001
+        return True
+
+    fields = _fields(criteria(required)(1, b=2))
+
+    assert fields["a"].default is dataclasses.MISSING
+    assert fields["b"].default is dataclasses.MISSING
+
+
+def test_make_predicate_criteria_module_and_name():
+    def local_rule(_e: SomeEntity) -> bool:
+        return True
+
+    crit = criteria(local_rule)()
+
+    assert type(crit).__module__ == local_rule.__module__ == __name__
+    assert type(crit).__name__ == local_rule.__name__ == "local_rule"
+    assert str(crit) == "local_rule"
+
+
+def test_make_predicate_criteria_positional_only():
+    def pos_only(_e: SomeEntity, a: int, /) -> bool:
+        return a == 3
+
+    factory = criteria(pos_only)
+    assert factory(3).is_satisfied_by(SomeEntity(1)) is True
+    assert factory(4).is_satisfied_by(SomeEntity(1)) is False

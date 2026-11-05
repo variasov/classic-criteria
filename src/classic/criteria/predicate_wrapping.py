@@ -40,7 +40,7 @@ class PredicateCriteria(Criteria[Object], Generic[Object, Params]):
 
     def is_satisfied_by(self, candidate: Object) -> bool:
         """Вызывает функцию-предикат с кандидатом и параметрами критерия."""
-        predicate = cast("Any", self.predicate)
+        predicate = cast("Any", self.predicate)  # pragma: no mutate
         return predicate(
             candidate,
             *[getattr(self, name) for name in self._positional],
@@ -179,14 +179,12 @@ def _find_descriptor(
     try:
         obj: Any = importlib.import_module(module)
         for part in qualname.split("."):
-            if part == "<locals>":
-                return None
             obj = getattr(obj, part)
     except (ImportError, AttributeError):
         return None
     if not isinstance(obj, CriteriaDescriptor):
         return None
-    return cast("CriteriaDescriptor[Any, ...]", obj)
+    return cast("CriteriaDescriptor[Any, ...]", obj)  # pragma: no mutate
 
 
 def _restore_predicate_criteria(
@@ -198,7 +196,9 @@ def _restore_predicate_criteria(
     """Восстанавливает критерий при unpickle."""
     descriptor = _find_descriptor(module, qualname)
     if descriptor is None:
-        raise pickle.UnpicklingError(f"Criteria {module}.{qualname} not found")
+        raise pickle.UnpicklingError(
+            f"Criteria {module}.{qualname} not found"
+        )  # pragma: no mutate
     return descriptor.criteria_cls(*args, **kwargs)
 
 
@@ -232,7 +232,7 @@ def make_predicate_criteria(
             raise TypeError(
                 f"Criteria {fn.__name__!r}: parameter name {name!r} "
                 f"is reserved (reserved names: "
-                f"{', '.join(_RESERVED_NAMES)})"
+                f"{', '.join(_RESERVED_NAMES)})"  # pragma: no mutate
             )
 
         if param.kind in (param.VAR_POSITIONAL, param.VAR_KEYWORD):
@@ -269,7 +269,7 @@ def make_predicate_criteria(
     )
     new_cls.__module__ = fn.__module__
     return cast(
-        "type[PredicateCriteria[Object, Params]]",
+        "type[PredicateCriteria[Object, Params]]",  # pragma: no mutate
         new_cls,
     )
 

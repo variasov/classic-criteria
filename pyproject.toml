@@ -20,7 +20,7 @@ dependencies = []
 Homepage = "https://github.com/variasov/classic-criteria"
 
 [tool.setuptools.packages.find]
-where = ["sources"]
+where = ["src"]
 namespaces = true
 
 [tool.setuptools.package-data]
@@ -32,14 +32,15 @@ dev = [
     "pytest~=9.2.0",
     "ruff~=0.17.3",
     "vulture~=2.16",
+    "mutmut~=3.8; sys_platform != 'win32'",
 ]
 
 [tool.pytest.ini_options]
-testpaths = ["tests", "sources"]
+testpaths = ["tests", "src"]
 addopts = ["--doctest-modules"]  # examples in docstrings are tests too
 
 [tool.pyright]
-include = ["sources", "tests"]
+include = ["src", "tests"]
 exclude = [
     "**/__pycache__",
     "**/.pytest_cache",
@@ -52,7 +53,7 @@ reportMissingTypeStubs = "none"
 [[tool.pyright.executionEnvironments]]
 root = "tests"
 reportPrivateUsage = "none"
-extraPaths = ["sources"]
+extraPaths = ["src"]
 
 [tool.ruff]
 extend-exclude = ["mutants"]
@@ -88,6 +89,10 @@ ignore = [
 ]
 
 [tool.vulture]
-paths = ["sources", "tests"]
+paths = ["src", "tests"]
 exclude = ["mutants"]
 min_confidence = 60
+
+[tool.mutmut]
+source_paths = ["src"]
+pytest_add_cli_args = ["-p", "no:cacheprovider"]

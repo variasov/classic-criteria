@@ -222,7 +222,7 @@ class BoundFormedCriteria(Generic[Object]):
     @property
     def criteria(self) -> CriteriaNode[Object]:
         """Привязанный критерий."""
-        return cast("CriteriaNode[Object]", self._criteria)
+        return cast("CriteriaNode[Object]", self._criteria)  # pragma: no mutate
 
     def __call__(self) -> bool:
         """Алиас `is_satisfied`."""
@@ -267,7 +267,8 @@ class CompositeCriteria(Criteria[Object]):
         """Структурное равенство: тот же тип и равные вложенные по порядку."""
         if type(self) is not type(other):
             return NotImplemented
-        return self.nested == cast("CompositeCriteria[Object]", other).nested
+        other_ = cast("CompositeCriteria[Object]", other)  # pragma: no mutate
+        return self.nested == other_.nested
 
     def __hash__(self) -> int:
         """Хеш по типу и вложенным критериям."""
@@ -382,7 +383,8 @@ class UnaryCriteria(Criteria[Object]):
         """Структурное равенство: тот же тип и равный вложенный критерий."""
         if type(self) is not type(other):
             return NotImplemented
-        return self._nested == cast("UnaryCriteria[Object]", other)._nested
+        other_ = cast("UnaryCriteria[Object]", other)  # pragma: no mutate
+        return self._nested == other_._nested
 
     def __hash__(self) -> int:
         """Хеш по типу и вложенному критерию."""
@@ -391,7 +393,7 @@ class UnaryCriteria(Criteria[Object]):
     @property
     def nested(self) -> CriteriaNode[Object]:
         """Вложенный критерий."""
-        return cast("CriteriaNode[Object]", self._nested)
+        return cast("CriteriaNode[Object]", self._nested)  # pragma: no mutate
 
 
 class Invert(UnaryCriteria[Object]):
@@ -439,7 +441,7 @@ class BinaryCriteria(Criteria[Object]):
         """Структурное равенство: тот же тип и равные операнды по порядку."""
         if type(self) is not type(other):
             return NotImplemented
-        other_ = cast("BinaryCriteria[Object]", other)
+        other_ = cast("BinaryCriteria[Object]", other)  # pragma: no mutate
         return self._left == other_._left and self._right == other_._right
 
     def __hash__(self) -> int:
@@ -449,12 +451,12 @@ class BinaryCriteria(Criteria[Object]):
     @property
     def left(self) -> CriteriaNode[Object]:
         """Левый операнд."""
-        return cast("CriteriaNode[Object]", self._left)
+        return cast("CriteriaNode[Object]", self._left)  # pragma: no mutate
 
     @property
     def right(self) -> CriteriaNode[Object]:
         """Правый операнд."""
-        return cast("CriteriaNode[Object]", self._right)
+        return cast("CriteriaNode[Object]", self._right)  # pragma: no mutate
 
     def is_satisfied_by(self, candidate: Object) -> bool:
         """Должен быть переопределён в подклассе."""

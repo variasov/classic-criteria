@@ -98,3 +98,7 @@ Network Trash Folder
 Temporary Items
 .apdisk
 .idea/
+
+# mutmut
+mutants/
+.venv-*/
