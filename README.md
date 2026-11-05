@@ -160,11 +160,12 @@ repr(Open() & ~Obsolete(3))
 # 'And(Open(), Invert(Obsolete(days_to_work=3)))'
 ```
 
-Критерии неизменяемы: составные хранят операнды в кортеже `nested`,
-критерии из `@criteria` — frozen dataclass. Поэтому деревья критериев
-можно класть в множества и использовать как ключи словарей, если листья
-тоже хешируемы (`@dataclass(frozen=True)`, критерии из `@criteria`);
-обычный `@dataclass` без `frozen=True` нехешируем:
+Критерии неизменяемы: составные хранят операнды в кортеже `nested`
+и не дают переприсвоить атрибуты после создания, критерии из `@criteria` —
+frozen dataclass (изменение поля даёт `FrozenInstanceError`). Поэтому
+деревья критериев можно класть в множества и использовать как ключи
+словарей, если листья тоже хешируемы (`@dataclass(frozen=True)`, критерии
+из `@criteria`); обычный `@dataclass` без `frozen=True` нехешируем:
 
 ```python
 @dataclass(frozen=True)

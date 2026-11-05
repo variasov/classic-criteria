@@ -448,6 +448,57 @@ def test_eq_composite_order_independent():
     assert And(unhashable, b) == And(b, unhashable)
 
 
+def test_composite_is_immutable():
+    crit = And[SomeEntity](with_param(1), without_param())
+
+    # кортеж нельзя изменить
+    assert isinstance(crit.nested, tuple)
+    with pytest.raises(TypeError, match="item assignment"):
+        crit.nested[0] = with_param(2)  # type: ignore[index]
+
+    # nested нельзя переприсвоить
+    with pytest.raises(AttributeError, match="immutable"):
+        crit.nested = (with_param(2),)  # type: ignore[misc]
+    with pytest.raises(AttributeError, match="immutable"):
+        crit.nested += (with_param(2),)  # type: ignore[operator]
+    with pytest.raises(AttributeError, match="immutable"):
+        crit.is_satisfied_by = with_param(2)  # type: ignore[method-assign]
+
+    # дерево не изменилось
+    assert crit.nested == (with_param(1), without_param())
+
+    # то же для Or
+    or_crit = Or[SomeEntity](with_param(1), without_param())
+    with pytest.raises(AttributeError, match="immutable"):
+        or_crit.nested = ()  # type: ignore[misc]
+
+
+def test_predicate_criteria_fields_are_frozen():
+    crit = with_param(1)
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        cast("Any", crit).value = 2
+
+    composite = And[SomeEntity](with_param(1), without_param())
+    leaf = cast("Any", composite.nested[0])
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        leaf.value = 2
+
+
+def test_composite_usable_as_set_and_dict_key():
+    left = with_param(1) & with_param(2)
+    right = with_param(2) & with_param(1)
+
+    assert len({left, right}) == 1
+    assert {left: "rule"}[right] == "rule"
+    assert {right, left, with_param(1) & with_param(3)} == {
+        left,
+        with_param(1) & with_param(3),
+    }
+
+    # And и Or не смешиваются
+    assert len({left, with_param(1) | with_param(2)}) == 2
+
+
 def test_eq_unary_and_binary():
     assert ~with_param(1) == ~with_param(1)
     assert ~with_param(1) != ~with_param(2)
