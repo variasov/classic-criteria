@@ -73,6 +73,7 @@ ignore = [
     "CPY001",   # no copyright headers in this project
     "COM812",   # conflicts with the ruff formatter
     "N818",     # CriteriaNotSatisfied is public API, renaming breaks users
+    "PLC0105",  # TypeVar names do not encode variance (no _co/_contra)
 ]
 
 [tool.ruff.lint.per-file-ignores]

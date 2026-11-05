@@ -108,27 +108,26 @@ class Criteria(Generic[Object]):
     ) -> Optional["Criteria[Object]"]:
         if self.is_satisfied_by(candidate):
             return None
-        else:
-            return self
+        return self
 
     @overload
     def __get__(
         self,
         instance: Object,
-        owner: type[Object],
+        _owner: type[Object],
     ) -> "BoundFormedCriteria[Object]": ...
 
     @overload
     def __get__(
         self,
         instance: None,
-        owner: type[Object],
+        _owner: type[Object],
     ) -> "Criteria[Object]": ...
 
     def __get__(
         self,
-        instance: Optional[Object],
-        owner: type[Object],
+        instance: Object | None,
+        _owner: type[Object],
     ) -> Union[
         "BoundFormedCriteria[Object]",
         "Criteria[Object]",
@@ -152,7 +151,7 @@ class BoundFormedCriteria(Generic[Object]):
 
     @property
     def criteria(self) -> CriteriaNode[Object]:
-        return cast(CriteriaNode[Object], self._criteria)
+        return cast("CriteriaNode[Object]", self._criteria)
 
     def __call__(self) -> bool:
         return self.is_satisfied()
@@ -173,7 +172,7 @@ class CompositeCriteria(Criteria[Object]):
 
     nested: list[Criteria[Object]]
 
-    def __init__(self, *criteria: Criteria[Object]):
+    def __init__(self, *criteria: Criteria[Object]) -> None:
         self.nested = list(criteria)
 
     def __repr__(self) -> str:
@@ -183,7 +182,7 @@ class CompositeCriteria(Criteria[Object]):
     def __eq__(self, other: object) -> bool:
         if type(self) is not type(other):
             return NotImplemented
-        return self.nested == cast(CompositeCriteria[Object], other).nested
+        return self.nested == cast("CompositeCriteria[Object]", other).nested
 
     def __hash__(self) -> int:
         return hash((type(self), tuple(self.nested)))
@@ -207,7 +206,7 @@ class And(CompositeCriteria[Object]):
         return And(*self.nested, *other_nested)
 
     def is_satisfied_by(self, candidate: Object) -> bool:
-        return all((criteria.is_satisfied_by(candidate) for criteria in self.nested))
+        return all(criteria.is_satisfied_by(candidate) for criteria in self.nested)
 
     def remainder_unsatisfied_by(
         self,
@@ -243,7 +242,7 @@ class Or(CompositeCriteria[Object]):
         return Or(*self.nested, *other_nested)
 
     def is_satisfied_by(self, candidate: Object) -> bool:
-        return any((criteria.is_satisfied_by(candidate) for criteria in self.nested))
+        return any(criteria.is_satisfied_by(candidate) for criteria in self.nested)
 
 
 class UnaryCriteria(Criteria[Object]):
@@ -264,14 +263,14 @@ class UnaryCriteria(Criteria[Object]):
     def __eq__(self, other: object) -> bool:
         if type(self) is not type(other):
             return NotImplemented
-        return self._nested == cast(UnaryCriteria[Object], other)._nested
+        return self._nested == cast("UnaryCriteria[Object]", other)._nested
 
     def __hash__(self) -> int:
         return hash((type(self), self._nested))
 
     @property
     def nested(self) -> CriteriaNode[Object]:
-        return cast(CriteriaNode[Object], self._nested)
+        return cast("CriteriaNode[Object]", self._nested)
 
 
 class Invert(UnaryCriteria[Object]):
@@ -311,7 +310,7 @@ class BinaryCriteria(Criteria[Object]):
     def __eq__(self, other: object) -> bool:
         if type(self) is not type(other):
             return NotImplemented
-        other_ = cast(BinaryCriteria[Object], other)
+        other_ = cast("BinaryCriteria[Object]", other)
         return self._left == other_._left and self._right == other_._right
 
     def __hash__(self) -> int:
@@ -319,11 +318,11 @@ class BinaryCriteria(Criteria[Object]):
 
     @property
     def left(self) -> CriteriaNode[Object]:
-        return cast(CriteriaNode[Object], self._left)
+        return cast("CriteriaNode[Object]", self._left)
 
     @property
     def right(self) -> CriteriaNode[Object]:
-        return cast(CriteriaNode[Object], self._right)
+        return cast("CriteriaNode[Object]", self._right)
 
     def is_satisfied_by(self, candidate: Object) -> bool:
         raise NotImplementedError
@@ -360,10 +359,10 @@ class _ConstantCriteria(Criteria[Object]):
 
 
 class ReturnsTrue(_ConstantCriteria[Object]):
-    def is_satisfied_by(self, candidate: Object) -> bool:
+    def is_satisfied_by(self, candidate: Object) -> bool:  # noqa: ARG002
         return True
 
 
 class ReturnsFalse(_ConstantCriteria[Object]):
-    def is_satisfied_by(self, candidate: Object) -> bool:
+    def is_satisfied_by(self, candidate: Object) -> bool:  # noqa: ARG002
         return False

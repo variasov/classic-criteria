@@ -2,6 +2,7 @@ import copy
 import pickle
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Any, TypeVar, cast
 from unittest import mock
 
 import classic.criteria
@@ -84,7 +85,7 @@ def test_instance(entity: SomeEntity):
 
 @pytest.mark.parametrize(
     "criteria_",
-    (
+    [
         SomeEntity.with_param(1),
         SomeEntity.with_param(1) & SomeEntity.without_param(),
         SomeEntity.with_param(1) & with_param(1),
@@ -93,7 +94,7 @@ def test_instance(entity: SomeEntity):
         CriteriaWithParam(1),
         CriteriaWithParam(1) & CriteriaWithoutParam(),
         CriteriaWithParam(1) & SomeEntity.with_param(1),
-    ),
+    ],
 )
 def test_class_criteria(criteria_: Criteria[SomeEntity], entity: SomeEntity):
     assert criteria_(entity) is True
@@ -149,6 +150,7 @@ def test_and_flattens_right_operand_without_mutation():
 
     result = left & right
 
+    assert isinstance(result, And)
     assert result.nested == [c1, c2, c3, c4]
     assert left.nested == [c1, c2]
     assert right.nested == [c3, c4]
@@ -161,6 +163,7 @@ def test_or_flattens_right_operand_without_mutation():
 
     result = left | right
 
+    assert isinstance(result, Or)
     assert result.nested == [c1, c2, c3, c4]
     assert left.nested == [c1, c2]
     assert right.nested == [c3, c4]
@@ -208,7 +211,7 @@ def test_dataclass_param_is_passed_as_is():
     received: list[Period] = []
 
     @criteria
-    def spy(event: Event, period: Period) -> bool:
+    def spy(_event: Event, period: Period) -> bool:
         received.append(period)
         return True
 
@@ -229,7 +232,7 @@ def test_list_param_is_not_copied():
     received: list[list[int]] = []
 
     @criteria
-    def spy(event: Event, items: list[int]) -> bool:
+    def spy(_event: Event, items: list[int]) -> bool:
         received.append(items)
         return True
 
@@ -241,7 +244,7 @@ def test_instance_attributes_and_class_name():
     period = Period(1, 5)
     c = in_period(period)
     assert type(c).__name__ == "in_period"
-    assert c.period is period
+    assert cast("Any", c).period is period
 
 
 class KwEntity:
@@ -264,7 +267,7 @@ def test_keyword_only_with_default():
     assert KwEntity.kw_default().is_satisfied_by(entity) is False
     assert entity.kw_default(x=7) is True
     with pytest.raises(TypeError):
-        KwEntity.kw_default(7)
+        KwEntity.kw_default(7)  # pyright: ignore[reportCallIssue]
 
 
 def test_keyword_only_without_default():
@@ -273,9 +276,9 @@ def test_keyword_only_without_default():
     assert entity.kw_required(b=2) is True
     assert entity.kw_required(5, b=2) is False
     with pytest.raises(TypeError):
-        KwEntity.kw_required(1, 2)
+        KwEntity.kw_required(1, 2)  # pyright: ignore[reportCallIssue]
     with pytest.raises(TypeError):
-        KwEntity.kw_required()
+        KwEntity.kw_required()  # pyright: ignore[reportCallIssue]
 
 
 def test_positional_only():
@@ -285,27 +288,24 @@ def test_positional_only():
 
 
 def test_var_args_are_rejected():
-    with pytest.raises(TypeError, match="args"):
+    def with_args(entity: Event, *args: int) -> bool:  # noqa: ARG001
+        return True
 
-        @criteria
-        def with_args(entity: Event, *args: int) -> bool:
-            return True
+    def with_kwargs(entity: Event, **kwargs: int) -> bool:  # noqa: ARG001
+        return True
+
+    with pytest.raises(TypeError, match="args"):
+        criteria(with_args)
 
     with pytest.raises(TypeError, match="kwargs"):
-
-        @criteria
-        def with_kwargs(entity: Event, **kwargs: int) -> bool:
-            return True
+        criteria(with_kwargs)
 
 
 def test_not_satisfied_is_regular_exception():
     assert issubclass(CriteriaNotSatisfied, Exception)
-    try:
+    with pytest.raises(Exception) as info:  # noqa: PT011
         CriteriaWithParam(2).must_be_satisfied_by(SomeEntity(1))
-    except Exception as exc:
-        assert isinstance(exc, CriteriaNotSatisfied)
-    else:
-        pytest.fail("Исключение не выброшено")
+    assert isinstance(info.value, CriteriaNotSatisfied)
 
 
 def test_not_satisfied_single_criteria(entity: SomeEntity):
@@ -327,7 +327,7 @@ def test_not_satisfied_contains_only_unsatisfied_part(entity: SomeEntity):
     with pytest.raises(CriteriaNotSatisfied) as info:
         (a & b & c).must_be_satisfied_by(entity)
     assert isinstance(info.value.criteria, And)
-    assert info.value.criteria.nested == [b, c]
+    assert info.value.criteria.nested == [b, c]  # pyright: ignore[reportUnknownMemberType]
 
 
 def test_not_satisfied_bound(entity: SomeEntity):
@@ -344,7 +344,7 @@ def test_not_satisfied_message(entity: SomeEntity):
     crit = CriteriaWithParam(2)
     with pytest.raises(CriteriaNotSatisfied) as info:
         crit.must_be_satisfied_by(entity)
-    assert str(info.value).startswith("Критерий не выполнен: ")
+    assert str(info.value).startswith("Criteria not satisfied: ")
     assert repr(crit) in str(info.value)
 
 
@@ -352,7 +352,7 @@ def test_not_satisfied_pickle(entity: SomeEntity):
     crit = CriteriaWithParam(2)
     with pytest.raises(CriteriaNotSatisfied) as info:
         crit.must_be_satisfied_by(entity)
-    restored = pickle.loads(pickle.dumps(info.value))
+    restored = pickle.loads(pickle.dumps(info.value))  # noqa: S301
     assert isinstance(restored, CriteriaNotSatisfied)
     assert isinstance(restored.criteria, CriteriaWithParam)
     assert restored.criteria.value == 2
@@ -362,7 +362,7 @@ def test_predicate_called_once_on_must_be_satisfied(entity: SomeEntity):
     calls: list[int] = []
 
     @criteria
-    def counted(e: SomeEntity) -> bool:
+    def counted(_e: SomeEntity) -> bool:
         calls.append(1)
         return False
 
@@ -383,7 +383,7 @@ def test_repr_composite():
     assert repr(with_param(1) | without_param()) == (
         "Or(with_param(value=1), without_param())"
     )
-    assert repr(And()) == "And()"
+    assert repr(And[SomeEntity]()) == "And()"
 
 
 def test_repr_unary_and_binary():
@@ -401,10 +401,10 @@ def test_repr_nested_combination():
 
 
 def test_repr_returns_constants_and_subclass_name():
-    assert repr(ReturnsTrue()) == "ReturnsTrue()"
-    assert repr(ReturnsFalse()) == "ReturnsFalse()"
+    assert repr(ReturnsTrue[SomeEntity]()) == "ReturnsTrue()"
+    assert repr(ReturnsFalse[SomeEntity]()) == "ReturnsFalse()"
 
-    class MyAnd(And):
+    class MyAnd(And[SomeEntity]):
         pass
 
     assert repr(MyAnd(with_param(1))) == "MyAnd(with_param(value=1))"
@@ -418,7 +418,7 @@ def test_repr_user_criteria_keeps_default():
 def test_eq_composite():
     assert with_param(1) & with_param(2) == with_param(1) & with_param(2)
     assert with_param(1) | with_param(2) == with_param(1) | with_param(2)
-    assert not (with_param(1) & with_param(2) != with_param(1) & with_param(2))
+    assert not (with_param(1) & with_param(2) != with_param(1) & with_param(2))  # noqa: SIM202
 
 
 def test_not_eq_composite():
@@ -440,9 +440,9 @@ def test_eq_unary_and_binary():
 
 
 def test_eq_returns_constants():
-    assert ReturnsTrue() == ReturnsTrue()
-    assert ReturnsFalse() == ReturnsFalse()
-    assert ReturnsTrue() != ReturnsFalse()
+    assert ReturnsTrue[SomeEntity]() == ReturnsTrue[SomeEntity]()
+    assert ReturnsFalse[SomeEntity]() == ReturnsFalse[SomeEntity]()
+    assert ReturnsTrue[SomeEntity]() != ReturnsFalse[SomeEntity]()
 
 
 def test_eq_with_non_criteria():
@@ -450,15 +450,15 @@ def test_eq_with_non_criteria():
         with_param(1) & with_param(2),
         ~with_param(1),
         with_param(1) ^ with_param(2),
-        ReturnsTrue(),
+        ReturnsTrue[SomeEntity](),
     ):
         assert crit != 1
-        assert not crit == "text"
+        assert not crit == "text"  # noqa: SIM201
         assert crit != None  # noqa: E711
 
 
 def test_eq_subclass_is_not_equal():
-    class MyAnd(And):
+    class MyAnd(And[SomeEntity]):
         pass
 
     assert MyAnd(with_param(1)) != And(with_param(1))
@@ -471,8 +471,8 @@ def test_hash_of_user_criteria():
     assert hash(a & b) == hash(a & b)
     assert hash(~a) == hash(~a)
     assert hash(a ^ b) == hash(a ^ b)
-    assert hash(ReturnsTrue()) == hash(ReturnsTrue())
-    assert hash(ReturnsTrue()) != hash(ReturnsFalse())
+    assert hash(ReturnsTrue[SomeEntity]()) == hash(ReturnsTrue[SomeEntity]())
+    assert hash(ReturnsTrue[SomeEntity]()) != hash(ReturnsFalse[SomeEntity]())
     assert {a & b, a & b, b & a} == {a & b, b & a}
     assert len({a & b, a & b, a | b}) == 2
 
@@ -515,38 +515,38 @@ def test_exports():
 
 
 def test_returns_constants_hash_and_type_equality():
-    assert hash(ReturnsFalse()) == hash(ReturnsFalse())
+    assert hash(ReturnsFalse[SomeEntity]()) == hash(ReturnsFalse[SomeEntity]())
 
-    class MyTrue(ReturnsTrue):
+    class MyTrue(ReturnsTrue[SomeEntity]):
         pass
 
-    assert MyTrue() != ReturnsTrue()
+    assert MyTrue() != ReturnsTrue[SomeEntity]()
 
 
 def test_criteria_rejects_non_callable():
-    with pytest.raises(TypeError, match="вызываем"):
+    with pytest.raises(TypeError, match="callable"):
         criteria(1)  # type: ignore[call-overload]
 
 
-def reserved_predicate(entity: SomeEntity, predicate: int) -> bool:
+def reserved_predicate(_entity: SomeEntity, predicate: int) -> bool:  # noqa: ARG001
     return True
 
 
-def reserved_positional(entity: SomeEntity, _positional: int) -> bool:
+def reserved_positional(_entity: SomeEntity, _positional: int) -> bool:
     return True
 
 
-def reserved_keyword(entity: SomeEntity, *, _keyword: int) -> bool:
+def reserved_keyword(_entity: SomeEntity, *, _keyword: int) -> bool:
     return True
 
 
 @pytest.mark.parametrize(
     ("fn", "name"),
-    (
+    [
         (reserved_predicate, "predicate"),
         (reserved_positional, "_positional"),
         (reserved_keyword, "_keyword"),
-    ),
+    ],
 )
 def test_reserved_parameter_names(
     fn: Callable[..., bool],
@@ -561,8 +561,11 @@ def test_and_is_satisfied_by(entity: SomeEntity):
     assert And(CriteriaWithParam(2), CriteriaWithoutParam())(entity) is False
 
 
-def _roundtrip(obj):
-    restored = pickle.loads(pickle.dumps(obj))
+_T = TypeVar("_T")
+
+
+def _roundtrip(obj: _T) -> _T:
+    restored = cast("_T", pickle.loads(pickle.dumps(obj)))  # noqa: S301
     assert restored == obj
     return restored
 
@@ -571,7 +574,7 @@ def test_pickle_module_function_criteria():
     original = with_param(2)
     restored = _roundtrip(original)
     assert type(restored) is type(original)
-    assert restored.value == 2
+    assert cast("Any", restored).value == 2
     assert type(original).__module__ == __name__
 
 
@@ -588,7 +591,7 @@ def test_pickle_keyword_only_criteria():
     assert type(restored) is type(original)
     assert restored.is_satisfied_by(KwEntity()) is True
     restored = _roundtrip(KwEntity.kw_required(5, b=3))
-    assert (restored.a, restored.b) == (5, 3)
+    assert (cast("Any", restored).a, cast("Any", restored).b) == (5, 3)
 
 
 def test_pickle_composite_criteria():
@@ -602,7 +605,7 @@ def test_not_satisfied_pickle_decorated(entity: SomeEntity):
     crit = with_param(2)
     with pytest.raises(CriteriaNotSatisfied) as info:
         crit.must_be_satisfied_by(entity)
-    restored = pickle.loads(pickle.dumps(info.value))
+    restored = pickle.loads(pickle.dumps(info.value))  # noqa: S301
     assert isinstance(restored, CriteriaNotSatisfied)
     assert type(restored.criteria) is type(crit)
     assert restored.criteria == crit
@@ -618,7 +621,7 @@ def test_deepcopy_decorated_criteria():
 
 def test_pickle_local_criteria_raises():
     @criteria
-    def local(entity: SomeEntity) -> bool:
+    def local(_entity: SomeEntity) -> bool:
         return True
 
     with pytest.raises(pickle.PicklingError, match="local"):

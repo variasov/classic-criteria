@@ -16,4 +16,4 @@ class CriteriaNotSatisfied(Exception):
         self.criteria = criteria
 
     def __str__(self) -> str:
-        return f"Критерий не выполнен: {self.criteria!r}"
+        return f"Criteria not satisfied: {self.criteria!r}"
