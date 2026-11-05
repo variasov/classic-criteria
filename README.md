@@ -1,39 +1,32 @@
 # Classic Criteria
 
-Основывается на книге Эрика Эванса 
+Критерии (спецификации) из книги Эрика Эванса
 "Domain Driven Design: tackling complexity in the heart of software".
 
-Предоставляет базовый примитив для описания языка 
-предметной области - Criteria (Критерий).
+Критерий описывает условие на объект предметной области. Его можно:
 
-Критерий нужен для описания выборки объектов. Есть два пути использования - 
-через определение класса, и через декоратор.
+- проверить на объекте в памяти;
+- скомбинировать с другими критериями через `&`, `|`, `^`, `~`;
+- передать в хранилище и превратить в запрос, например в SQL-условие
+  через [classic-db-tools](#выборки-в-бд).
+
+Критерий можно описать двумя способами: классом или декоратором `criteria`
+на функции или методе.
 
 ## Установка
+
 ```shell
 pip install classic-criteria
 ```
 
 ## Критерии-классы
 
-Представим себе, что у нас класс,
-олицетворяющий понятие из предметной области - задачу:
-
-Также, представим себе, что в предметной области задача называется открытой,
-если нет времени завершения и просроченной, если больше работа не завершена 
-больше какого-то количества дней.
-
-Также представим, что нам необходимо получать из некоторого хранилища задачи,
-соответствующие этим критериям.
-
-Задачу можно описать обычным датаклассом, а состояния задач - критериями.
-У критериев можно определить метод is_satisfied_by, которые будут определять,
-подходит ли объект под этот критерий или нет:
+Пусть есть задача. Задача открыта, если у неё нет времени завершения,
+и просрочена, если на неё ушло больше заданного числа дней:
 
 ```python
-from datetime import datetime
 from dataclasses import dataclass
-from typing import Optional
+from datetime import datetime
 
 from classic.criteria import Criteria
 
@@ -41,81 +34,155 @@ from classic.criteria import Criteria
 @dataclass
 class Task:
     created_at: datetime
-    finished_at: Optional[datetime] = None
+    finished_at: datetime | None = None
 
 
 @dataclass
 class Open(Criteria[Task]):
-    """Критерий для открытых задач"""
+    """Открытая задача."""
 
     def is_satisfied_by(self, candidate: Task) -> bool:
         return candidate.finished_at is None
 
-    
+
 @dataclass
 class Obsolete(Criteria[Task]):
-    """Критерий для просроченных задач"""
+    """Задача, на которую ушло больше `days_to_work` дней."""
+
     days_to_work: int
 
     def is_satisfied_by(self, candidate: Task) -> bool:
         return (
-            candidate.finished_at is not None and
-            (candidate.created_at - candidate.finished_at).days > self.days_to_work
+            candidate.finished_at is not None
+            and (candidate.finished_at - candidate.created_at).days
+            > self.days_to_work
         )
 ```
 
-Затем описанные критерии можно использовать в разных сценариях.
+### Проверка
 
-### Прямое использование
 ```python
-from datetime import datetime
+task = Task(created_at=datetime(2025, 1, 1))
 
-some_task = Task(created_at=datetime(2025, 1, 1))
-is_open = Open()
+Open().is_satisfied_by(task)
+# True
 
-is_open.is_satisfied_by(some_task)
+Open()(task)  # __call__ — синоним is_satisfied_by
 # True
 ```
 
-### Булева алгебра
+### Комбинирование
 
-Критерии можно связать логическими условиями:
+| Оператор | Результат | Выполнен, если |
+|---|---|---|
+| `a & b` | `And` | выполнены все |
+| `a \| b` | `Or` | выполнен хотя бы один |
+| `a ^ b` | `Xor` | выполнен ровно один |
+| `~a` | `Invert` | `a` не выполнен |
+
+Операторы возвращают новый критерий и не изменяют операнды, поэтому
+составной критерий можно сохранить в переменной и использовать повторно:
+
 ```python
-from datetime import datetime
+open_or_obsolete = Open() | Obsolete(3)
 
-some_task = Task(created_at=datetime(2025, 1, 1))
-some_crit = Open() | Obsolete(3)
-
-some_crit.is_satisfied_by(some_task)
+open_or_obsolete.is_satisfied_by(task)
 # True
+
+stale = open_or_obsolete & ~Open()  # open_or_obsolete не изменился
+stale.is_satisfied_by(task)
+# False
 ```
 
 ### Фильтрация
-У критерия метод `__call__` определен как алиас для `is_satisfied_by`.
-Это придает лаконичности при использовании критерия для фильтрации списка:
-```python
-from datetime import datetime
 
+Критерий можно вызвать как функцию, поэтому его удобно передавать
+в `filter`:
+
+```python
 tasks = [
     Task(created_at=datetime(2025, 1, 1)),
-    Task(created_at=datetime(2025, 1, 1),
-         finished_at=datetime(2025, 1, 5)),
-    Task(created_at=datetime(2025, 1, 1),
-         finished_at=datetime(2025, 1, 2)),
-] 
-some_crit = Open() | Obsolete(3)
+    Task(created_at=datetime(2025, 1, 1), finished_at=datetime(2025, 1, 5)),
+    Task(created_at=datetime(2025, 1, 1), finished_at=datetime(2025, 1, 2)),
+]
 
-filtered_tasks = filter(some_crit, tasks)
+list(filter(Open() | Obsolete(3), tasks))
+# [Task(created_at=datetime.datetime(2025, 1, 1, 0, 0), finished_at=None),
+#  Task(created_at=..., finished_at=datetime.datetime(2025, 1, 5, 0, 0))]
+```
+
+### Обязательная проверка
+
+`must_be_satisfied_by` бросает `CriteriaNotSatisfied`, если критерий
+не выполнен. В атрибуте `criteria` исключения лежит невыполненная часть:
+для `And` — только невыполненные критерии, для остальных — весь критерий.
+Сам проверяемый объект в исключении не хранится.
+
+```python
+from classic.criteria import CriteriaNotSatisfied
+
+done = Task(created_at=datetime(2025, 1, 1), finished_at=datetime(2025, 1, 2))
+
+try:
+    (Obsolete(0) & Open()).must_be_satisfied_by(done)
+except CriteriaNotSatisfied as error:
+    error.criteria
+    # Open()
+```
+
+Невыполненную часть можно получить и без исключения:
+
+```python
+(Obsolete(0) & Open()).remainder_unsatisfied_by(done)
+# Open()
+
+(Obsolete(0) & Open()).remainder_unsatisfied_by(task)
+# Obsolete(days_to_work=0)
+```
+
+`CriteriaNotSatisfied` унаследован от `Exception`.
+
+### Сравнение и отладка
+
+Составные критерии сравниваются по структуре и выводятся в `repr`
+в виде вызова конструкторов. Это удобно в логах и в тестах,
+например в `mock.assert_called_once_with(...)`:
+
+```python
+Open() & Obsolete(3) == Open() & Obsolete(3)
 # True
+
+Open() & Obsolete(3) == Obsolete(3) & Open()  # порядок важен
+# False
+
+repr(Open() & ~Obsolete(3))
+# 'And(Open(), Invert(Obsolete(days_to_work=3)))'
+```
+
+`ReturnsTrue` и `ReturnsFalse` всегда выполнены и всегда не выполнены
+соответственно. Их удобно брать начальным значением при сборке фильтра
+из частей:
+
+```python
+import functools
+import operator
+
+from classic.criteria import ReturnsTrue
+
+parts = [Open(), ~Obsolete(3)]
+functools.reduce(operator.and_, parts, ReturnsTrue())
+# And(ReturnsTrue(), Open(), Invert(Obsolete(days_to_work=3)))
 ```
 
 ## Критерии-методы
-Критерии можно определить как методы у класса (например, у самой сущности),
-используя декоратор `criteria`:
+
+Критерий можно описать методом класса, например самой сущности,
+с декоратором `criteria`. Первый параметр — проверяемый объект (`self`),
+остальные — параметры критерия:
+
 ```python
-from datetime import datetime
 from dataclasses import dataclass
-from typing import Optional
+from datetime import datetime
 
 from classic.criteria import criteria
 
@@ -123,114 +190,137 @@ from classic.criteria import criteria
 @dataclass
 class Task:
     created_at: datetime
-    finished_at: Optional[datetime] = None
-    
+    finished_at: datetime | None = None
+
     @criteria
     def open(self) -> bool:
         return self.finished_at is None
-    
+
     @criteria
     def obsolete(self, days_to_work: int) -> bool:
         return (
-            self.finished_at is not None and
-            (self.created_at - self.finished_at).days > days_to_work
+            self.finished_at is not None
+            and (self.finished_at - self.created_at).days > days_to_work
         )
 ```
 
-У таких критериев есть две группы сценариев использования,
-использование на инстансах, и использование на классах.
+### На экземпляре: немедленная проверка
 
-Далее будут примеры с инстансами, аналогичные примерам выше.
+На экземпляре вызов сразу проверяет условие и возвращает `bool`.
+Такие результаты комбинируются обычными `and`, `or`, `not`:
 
-### Прямое использование
 ```python
-from datetime import datetime
+task = Task(created_at=datetime(2025, 1, 1))
 
-some_task = Task(created_at=datetime(2025, 1, 1))
-
-some_task.open()
+task.open()
 # True
+
+task.open() or task.obsolete(3)
+# True
+
+task.obsolete.is_satisfied(3)
+# False
+
+task.obsolete.must_be_satisfied(3)
+# CriteriaNotSatisfied: Criteria not satisfied: obsolete(days_to_work=3)
 ```
 
-### Булева алгебра:
+### На классе: отложенный критерий
+
+На классе вызов ничего не проверяет, а создаёт объект-критерий.
+Он ведёт себя так же, как критерии-классы: комбинируется через
+`&`, `|`, `^`, `~`, передаётся в `filter` или в хранилище:
+
 ```python
-from datetime import datetime
+is_stale = Task.obsolete(3) & ~Task.open()
 
-some_task = Task(created_at=datetime(2025, 1, 1))
-
-some_task.open() or some_task.obsolete()
-# True
-```
-
-Обратите внимание, что булева алгебра используется с `and`, 'or' и `not`.
-
-## Критерии-методы с классами
-
-Критериев-методы можно использовать без инстансов, обращаясь к классам.
-При таком применении не произойдет проверки критерия. Полученный объект-критерий
-предоставляет собой отложенное условие:
-```python
-from datetime import datetime
-
-is_open = Task.open()  # Отложенная проверка
-
-some_task = Task(created_at=datetime(2025, 1, 1))
-
-is_open.is_satisfied_by(some_task)
-# True
-```
-
-### Фильтрация
-Отложенные критерии также можно использовать для фильтрации списка:
-```python
-from datetime import datetime
-
-some_crit = Task.open() | Task.obsolete()
+is_stale
+# And(obsolete(days_to_work=3), Invert(open()))
 
 tasks = [
     Task(created_at=datetime(2025, 1, 1)),
-    Task(created_at=datetime(2025, 1, 1),
-         finished_at=datetime(2025, 1, 5)),
-    Task(created_at=datetime(2025, 1, 1),
-         finished_at=datetime(2025, 1, 2)),
+    Task(created_at=datetime(2025, 1, 1), finished_at=datetime(2025, 1, 5)),
 ]
-
-filtered_tasks = filter(some_crit, tasks)
-# True
+list(filter(is_stale, tasks))
+# [Task(created_at=..., finished_at=datetime.datetime(2025, 1, 5, 0, 0))]
 ```
 
-### Критерии-функции
-Также можно использовать декоратор `criteria` на обычных функциях.
-Все свойства таких критериев абсолютно аналогичны варианту с методами:
+Составной критерий можно объявить атрибутом класса. На экземпляре он тоже
+проверяется сразу:
 
 ```python
-from datetime import datetime
-from dataclasses import dataclass
-from typing import Optional
-
-from classic.criteria import criteria
-
-
 @dataclass
 class Task:
     created_at: datetime
-    finished_at: Optional[datetime] = None
-    
+    finished_at: datetime | None = None
 
+    @criteria
+    def open(self) -> bool:
+        return self.finished_at is None
+
+    @criteria
+    def obsolete(self, days_to_work: int) -> bool:
+        return (
+            self.finished_at is not None
+            and (self.finished_at - self.created_at).days > days_to_work
+        )
+
+    stale = obsolete(3) & ~open()
+
+
+Task(created_at=datetime(2025, 1, 1)).stale()
+# False
+```
+
+### Параметры
+
+Критерий из `criteria` — это dataclass. Имя класса совпадает с именем
+функции, параметры становятся полями и доступны как атрибуты:
+
+```python
+crit = Task.obsolete(days_to_work=3)
+
+type(crit).__name__
+# 'obsolete'
+
+crit.days_to_work
+# 3
+```
+
+Поддерживаются значения по умолчанию, keyword-only и positional-only
+параметры. Значения передаются в функцию как есть, без копирования.
+Нельзя использовать `*args`, `**kwargs` и имена параметров `predicate`,
+`_positional`, `_keyword`: декоратор бросит `TypeError`.
+
+## Критерии-функции
+
+Декоратор работает и на обычных функциях. Такие критерии ведут себя так же,
+как критерии-методы на классе:
+
+```python
 @criteria
 def task_open(task: Task) -> bool:
     return task.finished_at is None
 
 
 @criteria
-def task_is_obsolete(task: Task, days_to_work: int) -> bool:
+def task_obsolete(task: Task, *, days_to_work: int) -> bool:
     return (
-        task.finished_at is not None and
-        (task.created_at - task.finished_at).days > days_to_work
+        task.finished_at is not None
+        and (task.finished_at - task.created_at).days > days_to_work
     )
+
+
+(task_open() | task_obsolete(days_to_work=3)).is_satisfied_by(task)
+# True
 ```
 
-### Выборки в БД
-Также, критерии можно использовать для построения запросов к БД.
+Критерии из функций и методов уровня модуля поддерживают `pickle`
+и `copy.deepcopy`.
 
-Пример рендера и обхода дерева можно увидеть в [classic-db-tools](https://github.com/variasov/classic-db-tools).
+## Выборки в БД
+
+Критерии можно превращать в запросы к БД. Как транслировать их в SQL,
+рассказано в разделе
+[«Динамические фильтры (Criteria)»](https://github.com/variasov/classic-db-tools#динамические-фильтры-criteria)
+README classic-db-tools.
