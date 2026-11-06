@@ -1,5 +1,6 @@
 """Базовый класс критериев, составные критерии и их привязка к объектам."""
 
+from collections import Counter
 from typing import Generic, Optional, Protocol, TypeVar, Union, cast, overload
 
 from .errors import CriteriaNotSatisfied
@@ -43,9 +44,18 @@ class Criteria(Generic[Object]):
     а на самом классе остаётся самим критерием.
 
     Составные критерии (`And`, `Or`, `Xor`, `Invert`) сравниваются
-    и хешируются структурно, порядок операндов важен. Сам `Criteria`
-    сравнивается по идентичности, если подкласс не задаёт `__eq__`
+    и хешируются структурно. Для `And` и `Or` порядок операндов
+    не важен (`Open() & Obsolete(3) == Obsolete(3) & Open()`),
+    для `Xor` и `Invert` - важен. Сам `Criteria` сравнивается
+    по идентичности, если подкласс не задаёт `__eq__`
     (например, через `@dataclass`).
+
+    Критерии immutable: составные критерии хранят операнды в кортеже
+    `nested` и не дают переприсвоить атрибуты после создания, критерии
+    из `@criteria` - frozen dataclass. Операторы `&`, `|`, `^`, `~`
+    строят новое дерево, не трогая операнды. Хеш согласован с равенством
+    и требует хешируемости вложенных критериев (например, `@dataclass`
+    без `frozen=True` нехешируем).
 
     Example:
         >>> from dataclasses import dataclass
@@ -242,21 +252,60 @@ class BoundFormedCriteria(Generic[Object]):
         self.criteria.must_be_satisfied_by(self.instance)
 
 
+def _same_multiset(
+    left: tuple[Criteria[Object], ...],
+    right: tuple[Criteria[Object], ...],
+) -> bool:
+    """Сравнивает вложенные критерии как мультимножество (без порядка).
+
+    Вложенные критерии могут быть нехешируемыми, поэтому используется
+    жадное сравнение с попарным поглощением, а не Counter.
+    """
+    if len(left) != len(right):
+        return False
+    rest = list(right)
+    for criteria_ in left:
+        matched = next(
+            (i for i, other in enumerate(rest) if criteria_ == other),
+            None,
+        )
+        if matched is None:
+            return False
+        rest.pop(matched)
+    return True
+
+
 class CompositeCriteria(Criteria[Object]):
     """Критерий с неограниченным количеством вложенных критериев.
 
-    Вложенные критерии лежат в списке `nested`; его читает обход дерева,
-    например traverse из classic-db-tools. Равенство и хеш структурные,
-    порядок вложенных критериев важен; хеш считается как у tuple, поэтому
-    при нехешируемом вложенном критерии (например, из `@criteria`)
-    бросается `TypeError`.
+    Вложенные критерии лежат в кортеже `nested`; его читает обход дерева,
+    например traverse из classic-db-tools. Критерий неизменяем:
+    `nested` нельзя переприсвоить после создания, а сам кортеж нельзя
+    изменить. Равенство и хеш структурные, порядок вложенных критериев
+    не важен (сравнение как мультимножество, с учётом повторов); хеш
+    считается как у frozenset, поэтому при нехешируемом вложенном
+    критерии (например, из `@dataclass` без `frozen=True`) бросается
+    `TypeError`.
+
+    Подклассам: свои атрибуты присваивайте до `super().__init__(...)` —
+    после инициализации любые присваивания дают `AttributeError`.
+    Унаследованный `__eq__` сравнивает только `nested`: если у подкласса
+    есть дополнительные поля, переопределите и `__eq__`, и `__hash__`.
     """
 
-    nested: list[Criteria[Object]]
+    nested: tuple[Criteria[Object], ...]
 
     def __init__(self, *criteria: Criteria[Object]) -> None:
         """Создаёт критерий из вложенных критериев."""
-        self.nested = list(criteria)
+        self.nested = tuple(criteria)
+
+    def __setattr__(self, name: str, value: object) -> None:
+        """Запрещает менять атрибуты после создания: критерий неизменяем."""
+        if "nested" in self.__dict__:
+            raise AttributeError(
+                f"{type(self).__name__} is immutable, can't set {name!r}",
+            )
+        super().__setattr__(name, value)
 
     def __repr__(self) -> str:
         """Возвращает вид `And(<вложенный>, ...)`."""
@@ -264,15 +313,15 @@ class CompositeCriteria(Criteria[Object]):
         return f"{type(self).__name__}({nested})"
 
     def __eq__(self, other: object) -> bool:
-        """Структурное равенство: тот же тип и равные вложенные по порядку."""
+        """Равенство мультимножеств: тот же тип и равные вложенные в любом порядке."""
         if type(self) is not type(other):
             return NotImplemented
         other_ = cast("CompositeCriteria[Object]", other)  # pragma: no mutate
-        return self.nested == other_.nested
+        return _same_multiset(self.nested, other_.nested)
 
     def __hash__(self) -> int:
-        """Хеш по типу и вложенным критериям."""
-        return hash((type(self), tuple(self.nested)))
+        """Хеш по типу и мультимножеству вложенных критериев."""
+        return hash((type(self), frozenset(Counter(self.nested).items())))
 
     def is_satisfied_by(self, candidate: Object) -> bool:
         """Должен быть переопределён в подклассе."""
@@ -283,12 +332,16 @@ class And(CompositeCriteria[Object]):
     """Критерий, проверяющий, что все вложенные критерии удовлетворяются.
 
     Результат оператора `&`. При `&` с другим `And` вложенные критерии
-    сплющиваются в один `And`. Обычно вручную не создаётся.
+    сплющиваются в один `And`. Порядок операндов сохраняется в `nested`
+    (слева направо), но на равенство и хеш не влияет. Обычно вручную
+    не создаётся.
 
     Example:
         >>> a, b, c = ReturnsTrue(), ReturnsFalse(), ReturnsTrue()
         >>> (a & b) & c
         And(ReturnsTrue(), ReturnsFalse(), ReturnsTrue())
+        >>> a & b == b & a  # порядок не важен
+        True
         >>> (a & b).remainder_unsatisfied_by(None)
         ReturnsFalse()
         >>> (b & b & a).remainder_unsatisfied_by(None)
@@ -298,8 +351,8 @@ class And(CompositeCriteria[Object]):
 
     def __and__(self, other: Criteria[Object]) -> Criteria[Object]:
         """Возвращает `And` с вложенными критериями обоих операндов."""
-        other_nested: list[Criteria[Object]] = (
-            other.nested if isinstance(other, And) else [other]
+        other_nested: tuple[Criteria[Object], ...] = (
+            other.nested if isinstance(other, And) else (other,)
         )
         return And(*self.nested, *other_nested)
 
@@ -321,11 +374,11 @@ class And(CompositeCriteria[Object]):
             иначе `And` из невыполненных.
 
         """
-        non_satisfied = [
+        non_satisfied = tuple(
             criteria
             for criteria in self.nested
             if not criteria.is_satisfied_by(candidate)
-        ]
+        )
         if not non_satisfied:
             return None
         if len(non_satisfied) == 1:
@@ -339,13 +392,16 @@ class Or(CompositeCriteria[Object]):
     """Критерий, проверяющий, что выполнен хотя бы один вложенный критерий.
 
     Результат оператора `|`. При `|` с другим `Or` вложенные критерии
-    сплющиваются в один `Or`. Если не выполнены все ветки,
-    `remainder_unsatisfied_by` возвращает весь `Or`. Обычно вручную
-    не создаётся.
+    сплющиваются в один `Or`. Порядок операндов сохраняется в `nested`
+    (слева направо), но на равенство и хеш не влияет. Если не выполнены
+    все ветки, `remainder_unsatisfied_by` возвращает весь `Or`. Обычно
+    вручную не создаётся.
 
     Example:
         >>> (ReturnsFalse() | ReturnsFalse()) | ReturnsTrue()
         Or(ReturnsFalse(), ReturnsFalse(), ReturnsTrue())
+        >>> ReturnsFalse() | ReturnsTrue() == ReturnsTrue() | ReturnsFalse()
+        True
         >>> (ReturnsFalse() | ReturnsFalse()).remainder_unsatisfied_by(None)
         Or(ReturnsFalse(), ReturnsFalse())
 
@@ -353,8 +409,8 @@ class Or(CompositeCriteria[Object]):
 
     def __or__(self, other: Criteria[Object]) -> Criteria[Object]:
         """Возвращает `Or` с вложенными критериями обоих операндов."""
-        other_nested: list[Criteria[Object]] = (
-            other.nested if isinstance(other, Or) else [other]
+        other_nested: tuple[Criteria[Object], ...] = (
+            other.nested if isinstance(other, Or) else (other,)
         )
         return Or(*self.nested, *other_nested)
 
@@ -504,15 +560,20 @@ class _ConstantCriteria(Criteria[Object]):
 class ReturnsTrue(_ConstantCriteria[Object]):
     """Критерий, которому удовлетворяет любой объект.
 
-    Нейтральный элемент для `&`; удобен как начальное значение при сборке
-    фильтра.
+    Нейтральный элемент для `&`; отправная точка динамической выборки:
+    фильтр собирается из частей, и без добавленных условий остаётся
+    корректным критерием, которому удовлетворяет любой объект.
 
     Example:
-        >>> import functools, operator
-        >>> parts = [ReturnsTrue(), ReturnsFalse()]
-        >>> all_of = functools.reduce(operator.and_, parts, ReturnsTrue())
-        >>> all_of.is_satisfied_by(1)
+        >>> criteria = ReturnsTrue()
+        >>> criteria &= ReturnsFalse()  # добавили условие в фильтр
+        >>> criteria
+        And(ReturnsTrue(), ReturnsFalse())
+        >>> criteria.is_satisfied_by(1)
         False
+        >>> empty = ReturnsTrue()  # фильтр без условий
+        >>> empty.is_satisfied_by(1)
+        True
 
     """
 

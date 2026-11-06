@@ -73,13 +73,17 @@
 | 11 | CI: `checks.yml`, `publish.yml` с `needs: checks` | S | сделано (`2baaa4a`) |
 | 12 | Каталог `src/`, mutmut, тесты по выжившим мутантам | M | сделано (`f70744a`): 224 мутанта убиты, выживших нет |
 | 13 | Версия 1.0.0 и CHANGELOG | S | сделано (`0291ddb`) |
+| 14 | Frozen-вариант: `nested` — кортеж, `@criteria` — frozen dataclass, `And`/`Or` без порядка; write-once `__setattr__`; подклассы — атрибуты до `super()` | M | сделано (`2875d3b`, `4329fb6`): acceptance 15/15 против 2/15 до, тесты 3.10–3.14, интеграция с dbtools |
 
 ### Решения (2026-11-04)
 
 - Ветка `v1`, следующая версия 1.0.0: меняются поведение и API.
 - Extra `db-tools` удалён: связка ставится через `classic-db-tools[criteria]`.
 - `CriteriaNotSatisfied` наследуется от `Exception`, атрибут `criteria` содержит невыполненную часть (`remainder_unsatisfied_by`), кандидат не хранится.
-- Составные критерии: структурные `__eq__` и `__hash__`, хеш как у tuple (`TypeError` при нехешируемом вложенном критерии).
+- Составные критерии: структурные `__eq__` и `__hash__`; `nested` — кортеж (иммутабельность),
+  для `And`/`Or` сравнение как мультимножество (порядок не важен), для `Xor`/`Invert` — по порядку;
+  хеш как у `frozenset` от `Counter(nested).items()` (`TypeError` при нехешируемом вложенном).
+  Критерии из `@criteria` — frozen dataclass: хешируемы, если хешируемы значения полей.
 - Экспортируются `ReturnsTrue`, `ReturnsFalse`, `CompositeCriteria`, `UnaryCriteria`, `BinaryCriteria`.
 - Имена классов, `nested`, `left`/`right` и поля критериев из `@criteria` не менялись: совместимость с `traverse` из classic-db-tools.
 - Стиль кавычек: двойные, как в эталоне. `N818` и `PLC0105` в ignore. Сообщения исключений на английском, докстринги и комментарии на русском.

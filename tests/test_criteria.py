@@ -1,6 +1,7 @@
 import copy
 import dataclasses
 import functools
+import itertools
 import pickle
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -121,10 +122,10 @@ def test_and_does_not_mutate_operands(entity: SomeEntity):
 
     b = a & third
 
-    assert a.nested == [first, second]
+    assert a.nested == (first, second)
     assert b is not a
     assert isinstance(b, And)
-    assert b.nested == [first, second, third]
+    assert b.nested == (first, second, third)
     assert a(entity) is True
     assert b(entity) is False
 
@@ -138,10 +139,10 @@ def test_or_does_not_mutate_operands(entity: SomeEntity):
 
     b = a | third
 
-    assert a.nested == [first, second]
+    assert a.nested == (first, second)
     assert b is not a
     assert isinstance(b, Or)
-    assert b.nested == [first, second, third]
+    assert b.nested == (first, second, third)
     assert a(entity) is False
     assert b(entity) is True
 
@@ -154,9 +155,9 @@ def test_and_flattens_right_operand_without_mutation():
     result = left & right
 
     assert isinstance(result, And)
-    assert result.nested == [c1, c2, c3, c4]
-    assert left.nested == [c1, c2]
-    assert right.nested == [c3, c4]
+    assert result.nested == (c1, c2, c3, c4)
+    assert left.nested == (c1, c2)
+    assert right.nested == (c3, c4)
 
 
 def test_or_flattens_right_operand_without_mutation():
@@ -167,15 +168,15 @@ def test_or_flattens_right_operand_without_mutation():
     result = left | right
 
     assert isinstance(result, Or)
-    assert result.nested == [c1, c2, c3, c4]
-    assert left.nested == [c1, c2]
-    assert right.nested == [c3, c4]
+    assert result.nested == (c1, c2, c3, c4)
+    assert left.nested == (c1, c2)
+    assert right.nested == (c3, c4)
 
 
 def test_class_attribute_criteria_is_not_changed(entity: SomeEntity):
     rule = SomeEntity.rule
     assert isinstance(rule, And)
-    nested_before = list(rule.nested)
+    nested_before = rule.nested
 
     extended = SomeEntity.rule & CriteriaWithParam(2)
 
@@ -330,7 +331,7 @@ def test_not_satisfied_contains_only_unsatisfied_part(entity: SomeEntity):
     with pytest.raises(CriteriaNotSatisfied) as info:
         (a & b & c).must_be_satisfied_by(entity)
     assert isinstance(info.value.criteria, And)
-    assert info.value.criteria.nested == [b, c]  # pyright: ignore[reportUnknownMemberType]
+    assert info.value.criteria.nested == (b, c)  # pyright: ignore[reportUnknownMemberType]
 
 
 def test_not_satisfied_bound(entity: SomeEntity):
@@ -425,11 +426,168 @@ def test_eq_composite():
 
 
 def test_not_eq_composite():
-    assert with_param(1) & with_param(2) != with_param(2) & with_param(1)
-    assert with_param(1) & with_param(2) != with_param(1) | with_param(2)
     assert with_param(1) & with_param(2) != with_param(1) & with_param(3)
+    assert with_param(1) & with_param(2) != with_param(1) | with_param(2)
     assert with_param(1) & with_param(2) != with_param(1)
     assert And(with_param(1)) != Or(with_param(1))
+
+
+def test_eq_composite_order_independent():
+    # порядок операндов не влияет на равенство And и Or
+    assert with_param(1) & with_param(2) == with_param(2) & with_param(1)
+    assert with_param(1) | with_param(2) == with_param(2) | with_param(1)
+    # с учётом кратности
+    a, b = with_param(1), with_param(2)
+    assert And(a, a, b) == And(b, a, a)
+    assert And(a, a, b) != And(a, b, b)
+    assert And(a, b) != And(a, a, b)
+    # Xor и Invert остаются порядко-зависимыми
+    assert (with_param(1) ^ with_param(2)) != (with_param(2) ^ with_param(1))
+    assert ~with_param(1) != ~with_param(2)
+    # нехешируемые вложенные тоже сравниваются без порядка
+    unhashable = CriteriaWithParam(1)
+    assert And(unhashable, b) == And(b, unhashable)
+
+
+def test_composite_is_immutable():
+    crit = And[SomeEntity](with_param(1), without_param())
+
+    # кортеж нельзя изменить
+    assert isinstance(crit.nested, tuple)
+    with pytest.raises(TypeError, match="item assignment"):
+        crit.nested[0] = with_param(2)  # type: ignore[index]
+
+    # nested нельзя переприсвоить
+    with pytest.raises(AttributeError, match="immutable"):
+        crit.nested = (with_param(2),)  # type: ignore[misc]
+    with pytest.raises(AttributeError, match="immutable"):
+        crit.nested += (with_param(2),)  # type: ignore[operator]
+    with pytest.raises(AttributeError, match="immutable"):
+        crit.is_satisfied_by = with_param(2)  # type: ignore[method-assign]
+
+    # дерево не изменилось
+    assert crit.nested == (with_param(1), without_param())
+
+    # то же для Or
+    or_crit = Or[SomeEntity](with_param(1), without_param())
+    with pytest.raises(AttributeError, match="immutable"):
+        or_crit.nested = ()  # type: ignore[misc]
+
+
+def test_predicate_criteria_fields_are_frozen():
+    crit = with_param(1)
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        cast("Any", crit).value = 2
+
+    composite = And[SomeEntity](with_param(1), without_param())
+    leaf = cast("Any", composite.nested[0])
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        leaf.value = 2
+
+
+def test_composite_usable_as_set_and_dict_key():
+    left = with_param(1) & with_param(2)
+    right = with_param(2) & with_param(1)
+
+    assert len({left, right}) == 1
+    assert {left: "rule"}[right] == "rule"
+    assert {right, left, with_param(1) & with_param(3)} == {
+        left,
+        with_param(1) & with_param(3),
+    }
+
+    # And и Or не смешиваются
+    assert len({left, with_param(1) | with_param(2)}) == 2
+
+
+def test_empty_composites():
+    empty_and = And[SomeEntity]()
+    empty_or = Or[SomeEntity]()
+
+    assert empty_and == And[SomeEntity]()
+    assert empty_or == Or[SomeEntity]()
+    assert empty_and != empty_or
+    assert empty_and != And[SomeEntity](with_param(1))
+    assert hash(empty_and) == hash(And[SomeEntity]())
+    assert len({empty_and, empty_or, And[SomeEntity]()}) == 2
+    # all([]) и any([])
+    entity = SomeEntity(1)
+    assert empty_and.is_satisfied_by(entity) is True
+    assert empty_or.is_satisfied_by(entity) is False
+
+
+def test_order_independent_deep_in_tree():
+    left = (with_param(1) & with_param(2)) | (with_param(3) & with_param(4))
+    right = (with_param(4) & with_param(3)) | (with_param(2) & with_param(1))
+    assert left == right
+    assert hash(left) == hash(right)
+
+    # And внутри Invert: порядок тоже не важен
+    assert ~(with_param(1) & with_param(2)) == ~(with_param(2) & with_param(1))
+
+
+def test_eq_hash_contract_on_permutations():
+    # Контракт eq -> hash и равенство на всех перестановках с дубликатами
+    base = [with_param(1), with_param(1), with_param(2)]
+    crits = [And(*p) for p in itertools.permutations(base)]
+    crits += [Or(*p) for p in itertools.permutations(base)]
+
+    for a, b in itertools.combinations(crits, 2):
+        same_type = type(a) is type(b)
+        if same_type:
+            assert a == b
+            assert hash(a) == hash(b)
+        else:
+            assert a != b
+
+    # разное число повторов - разные критерии
+    assert And(with_param(1), with_param(1)) != And(with_param(1), with_param(2))
+    assert len({*crits}) == 2  # And и Or
+
+
+def test_copy_and_deepcopy_composite():
+    original = And[SomeEntity](with_param(1), with_param(2))
+
+    shallow = copy.copy(original)
+    deep = copy.deepcopy(original)
+
+    assert shallow == original
+    assert deep == original
+    assert shallow is not original
+    assert deep is not original
+    # shallow делит листья, deep копирует
+    assert shallow.nested[0] is original.nested[0]
+    assert deep.nested[0] is not original.nested[0]
+
+    # копия остаётся иммутабельной
+    with pytest.raises(AttributeError, match="immutable"):
+        deep.nested = ()  # type: ignore[misc]
+
+
+def test_subclass_extra_attrs_and_eq_caveat():
+    class WeightedAnd(And[SomeEntity]):
+        def __init__(self, weight: int, *criteria_: Criteria[SomeEntity]) -> None:
+            self.weight = weight  # до super(): nested ещё не установлен
+            super().__init__(*criteria_)
+
+    a = WeightedAnd(5, with_param(1), with_param(2))
+    b = WeightedAnd(5, with_param(2), with_param(1))
+
+    # доп. атрибуты работают, равенство унаследовано (только nested)
+    assert a.weight == 5
+    assert a == b
+
+    # после super() присваивать нельзя
+    class Late(And[SomeEntity]):
+        def __init__(self, *criteria_: Criteria[SomeEntity]) -> None:
+            super().__init__(*criteria_)
+            with pytest.raises(AttributeError, match="immutable"):
+                self.is_satisfied_by = None  # type: ignore[method-assign]
+
+    Late(with_param(1))
+
+    # caveat: weight не участвует в унаследованном __eq__
+    assert WeightedAnd(5, with_param(1)) == WeightedAnd(6, with_param(1))
 
 
 def test_eq_unary_and_binary():
@@ -480,13 +638,23 @@ def test_hash_of_user_criteria():
     assert len({a & b, a & b, a | b}) == 2
 
 
-def test_hash_with_criteria_decorator_is_unhashable():
+def test_hash_with_criteria_decorator():
+    # frozen dataclass: хешируем, если хешируемы значения полей
+    assert hash(with_param(1) & with_param(2)) == hash(with_param(2) & with_param(1))
+    assert hash(~with_param(1)) == hash(~with_param(1))
+    assert hash(with_param(1) ^ with_param(2)) == hash(with_param(1) ^ with_param(2))
+    assert len({with_param(1) & with_param(2), with_param(2) & with_param(1)}) == 1
+
+
+def test_hash_unhashable_field_raises():
+    @criteria
+    def with_list(_entity: SomeEntity, items: list[int]) -> bool:
+        return bool(items)  # pragma: no cover
+
     with pytest.raises(TypeError):
-        hash(with_param(1) & with_param(2))
+        hash(with_list([1, 2]))
     with pytest.raises(TypeError):
-        hash(~with_param(1))
-    with pytest.raises(TypeError):
-        hash(with_param(1) ^ with_param(2))
+        hash(with_list([1, 2]) & with_param(1))
 
 
 def test_mock_assert_called_with_composite_criteria():
@@ -602,6 +770,17 @@ def test_pickle_composite_criteria():
     restored = _roundtrip(original)
     assert isinstance(restored, And)
     assert type(restored.nested[0]) is type(with_param(1))
+
+
+def test_pickle_composite_all_protocols():
+    original = And(with_param(1), without_param())
+    for protocol in range(pickle.HIGHEST_PROTOCOL + 1):
+        restored = pickle.loads(pickle.dumps(original, protocol=protocol))  # noqa: S301
+        assert restored == original
+        assert hash(restored) == hash(original)
+        # иммутабельность сохраняется после unpickle
+        with pytest.raises(AttributeError, match="immutable"):
+            restored.nested = ()  # type: ignore[misc]
 
 
 def test_not_satisfied_pickle_decorated(entity: SomeEntity):
