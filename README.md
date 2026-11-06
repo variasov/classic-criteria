@@ -191,20 +191,42 @@ len(rules)
 для `==` хешируемость не нужна, `TypeError` даёт только `hash()`
 и добавление в `set`/`dict`.
 
-`ReturnsTrue` и `ReturnsFalse` всегда выполнены и всегда не выполнены
-соответственно. Их удобно брать начальным значением при сборке фильтра
-из частей:
+### Сборка фильтра из частей
+
+`ReturnsTrue` всегда выполнен, `ReturnsFalse` — никогда. Смысл
+`ReturnsTrue` — быть отправной точкой динамической выборки: фильтр
+собирается по частям, и даже без добавленных условий он остаётся
+корректным критерием, которому удовлетворяет любой объект:
 
 ```python
-import functools
-import operator
-
 from classic.criteria import ReturnsTrue
 
-parts = [Open(), ~Obsolete(3)]
-functools.reduce(operator.and_, parts, ReturnsTrue())
+
+def tasks_filter(
+    *,
+    only_open: bool = False,
+    max_days: int | None = None,
+) -> Criteria[Task]:
+    criteria = ReturnsTrue()
+    if only_open:
+        criteria &= Open()
+    if max_days is not None:
+        criteria &= ~Obsolete(max_days)
+    return criteria
+
+
+tasks_filter(only_open=True, max_days=3)
 # And(ReturnsTrue(), Open(), Invert(Obsolete(days_to_work=3)))
+
+tasks_filter()  # ни одно условие не добавлено
+# ReturnsTrue()
+
+tasks_filter(only_open=True, max_days=3).is_satisfied_by(task)
+# True
 ```
+
+Собранный критерий можно проверить в памяти, скомбинировать дальше или
+передать в хранилище — как любой другой.
 
 ## Критерии-методы
 

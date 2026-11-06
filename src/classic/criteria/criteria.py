@@ -560,15 +560,20 @@ class _ConstantCriteria(Criteria[Object]):
 class ReturnsTrue(_ConstantCriteria[Object]):
     """Критерий, которому удовлетворяет любой объект.
 
-    Нейтральный элемент для `&`; удобен как начальное значение при сборке
-    фильтра.
+    Нейтральный элемент для `&`; отправная точка динамической выборки:
+    фильтр собирается из частей, и без добавленных условий остаётся
+    корректным критерием, которому удовлетворяет любой объект.
 
     Example:
-        >>> import functools, operator
-        >>> parts = [ReturnsTrue(), ReturnsFalse()]
-        >>> all_of = functools.reduce(operator.and_, parts, ReturnsTrue())
-        >>> all_of.is_satisfied_by(1)
+        >>> criteria = ReturnsTrue()
+        >>> criteria &= ReturnsFalse()  # добавили условие в фильтр
+        >>> criteria
+        And(ReturnsTrue(), ReturnsFalse())
+        >>> criteria.is_satisfied_by(1)
         False
+        >>> empty = ReturnsTrue()  # фильтр без условий
+        >>> empty.is_satisfied_by(1)
+        True
 
     """
 
